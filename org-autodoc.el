@@ -27,6 +27,8 @@
 
 ;; Generate overview for elisp packages.
 
+;;; Commands
+
 ;;; Code:
 
 (require 'shell)
@@ -353,8 +355,7 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
                                   t))
                                 2)))
               (user (pop parts))
-              (name (pop parts))
-              (maps (org-autodoc-scan-get-buffer-maps)))
+              (name (pop parts)))
     (let ((items (org-autodoc-scan-buffer))
           (str))
       (setq str (string-join
@@ -372,15 +373,14 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
                   (org-autodoc-elisp-generate-use-package-string
                    user name
                    (plist-get items :interactive)
-                   maps)
+                   (org-autodoc-scan-get-buffer-maps))
                   "#+end_src"
                   (org-autodoc-annotate-with
                    "** "
                    'org-autodoc-annotate-as-org-list))
                  "\n\n"))
-      ;; (set-text-properties 0 (length str) nil str)
-      (when output-file
-        (write-region str nil output-file nil nil))
+      (with-temp-buffer (insert str)
+                        (pp-buffer))
       str)))
 
 ;;;###autoload
@@ -414,9 +414,9 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
              (kill-buffer (process-buffer process))
              (if (= (process-exit-status process) 0)
                  (progn
-                   (find-file temp-file)
-                   (org-mode))
-               (user-error (format "%s\n%s" command output))))))
+                   (when (file-exists-p temp-file)
+                     (find-file temp-file)))
+               (user-error output)))))
         (require 'comint)
         (when (fboundp 'comint-output-filter)
           (set-process-filter proc #'comint-output-filter))))))

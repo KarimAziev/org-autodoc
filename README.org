@@ -1,0 +1,35 @@
+* org-autodoc
+
+Generate overview for elisp package
+
+** Installation
+
+*** Manually
+
+Download repository and it to your load path in your init file:
+
+#+begin_src elisp :eval no
+
+(add-to-list 'load-path "/path/to/org-autodoc/")
+
+(require 'org-autodoc)
+
+#+end_src
+
+*** With use-package and straight
+
+#+begin_src elisp :eval no
+
+(use-package org-autodoc
+	:straight (org-autodoc
+			       :repo "KarimAziev/org-autodoc"
+			       :type git
+			       :host github)
+	:commands (org-autodoc-async))
+
+#+end_src
+
+** Commands
+
+*** ~org-autodoc-async~
+Show annotations as org list items.
