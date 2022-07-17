@@ -1,6 +1,14 @@
 * org-autodoc
 
-Generate overview for elisp package
+Generate overview and use-package skeletons for elisp packages.
+
+** Requirements
+
++ Emacs >= 28.1
++ comint
++ shell
++ find-func
++ org
 
 ** Installation
 
@@ -25,11 +33,20 @@ Download repository and it to your load path in your init file:
 			       :repo "KarimAziev/org-autodoc"
 			       :type git
 			       :host github)
-	:commands (org-autodoc-async))
+	:commands (org-autodoc-async
+			       org-autodoc-insert-use-package))
 
 #+end_src
 
 ** Commands
 
 *** ~org-autodoc-async~
-Show annotations as org list items.
+Load current file in new emacs process and generate documentation in org mode syntax.
+
+[[./org-autodoc-async.gif]]
+
+*** ~org-autodoc-insert-use-package~
+Read a library and interactivelly insert skeleton for ~use-package~.
+Skeleton includes commands and bindings.
+
+[[./org-autodoc-insert-use-package.gif]]

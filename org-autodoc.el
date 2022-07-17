@@ -5,7 +5,7 @@
 ;; Author: Karim Aziiev <karim.aziiev@gmail.com>
 ;; URL: https://github.com/KarimAziev/org-autodoc
 ;; Keywords: convenience, docs
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "28.1"))
 
 ;; This file is NOT part of GNU Emacs.
@@ -25,15 +25,17 @@
 
 ;;; Commentary:
 
-;; Generate overview for elisp packages.
+;; Generate overview and use-package skeletons for elisp packages.
 
 ;;; Commands
 
 ;;; Code:
 
 (require 'shell)
+(require 'find-func)
 
 (defvar org-autodoc-load-filename (or load-file-name buffer-file-name))
+
 (defvar org-autodoc-group-annotation-alist
   '((:define-derived-mode . "Major mode")
     (:define-generic-mode . "Major mode")
@@ -79,6 +81,178 @@
     (easy-mmode-define-minor-mode . 2)
     (define-minor-mode . 2)
     (define-generic-mode . 7)))
+
+(defun org-autodoc-bounds-of-current-src-block ()
+  "Return list of (BLOCK-TYPE BEGINNING END).
+Beginning and end is bounds of inner content. For example: (example 4292 4486)."
+  (save-excursion
+    (save-restriction
+      (widen)
+      (beginning-of-line)
+      (skip-chars-forward "\s\t")
+      (let ((case-fold-search t)
+            (block-start-re
+             "[,]?#\\+\\(begin\\)_\\([a-z]+\\)\\($\\|[\s\f\t\n\r\v]\\)")
+            (prefix))
+        (if (looking-at block-start-re)
+            (let ((open-block (match-string-no-properties 0))
+                  (block-type (match-string-no-properties 2))
+                  (content-beg (progn (forward-line 1)
+                                      (point))))
+              (setq block-type (downcase block-type))
+              (setq prefix (if (string= "," (substring open-block 0 1)) "," ""))
+              (when (re-search-forward (concat
+                                        prefix "#\\+\\(end\\)_" "\\("
+                                        (regexp-quote
+                                         (downcase block-type))
+                                        "\\)" "\\($\\|[\s\f\t\n\r\v]\\)")
+                                       nil t 1)
+                (let ((content-end (match-beginning 0)))
+                  (list block-type
+                        content-beg
+                        content-end))))
+          (when
+              (re-search-forward
+               "[,]?#\\+\\(begin\\|end\\)_\\([a-z]+\\)\\($\\|[\s\f\t\n\r\v]\\)"
+               nil t 1)
+            (when-let ((word (match-string-no-properties 1))
+                       (prefix (if (string= ","
+                                            (substring-no-properties
+                                             (match-string-no-properties 0)
+                                             0 1))
+                                   ","
+                                 ""))
+                       (structure-type (match-string-no-properties 2))
+                       (end (match-beginning 0)))
+              (when (string= (downcase word) "end")
+                (when (re-search-backward (concat prefix
+                                                  "#\\+\\(begin\\)_" "\\("
+                                                  (regexp-quote
+                                                   (downcase structure-type))
+                                                  "\\)" "\\($\\|[\s\f\t\n\r\v]\\)")
+                                          nil t 1)
+                  (forward-line 1)
+                  (list (downcase structure-type)
+                        (point)
+                        end))))))))))
+
+(defmacro org-autodoc-with-temp-lisp-buffer (&rest body)
+  "Execute BODY in temp buffer with Emacs Lisp mode without hooks."
+  (declare (indent 2) (debug t))
+  `(with-temp-buffer
+     (erase-buffer)
+     (let (emacs-lisp-mode-hook) (emacs-lisp-mode))
+     (progn
+       ,@body)))
+
+(defun org-autodoc-format-keymap-to-org (keymap)
+  "Convert KEYMAP to org table."
+  (when (keymapp keymap)
+    (with-temp-buffer
+      (describe-map-tree keymap nil nil nil nil t)
+      (while (re-search-backward "[\n][\n]+" nil t 1)
+        (replace-match "\n"))
+      (let* ((items (seq-remove
+                     (apply-partially #'string-match-p "^[<]menu-bar[>]")
+                     (split-string
+                      (string-trim (buffer-substring-no-properties
+                                    (point-min) (point-max)))
+                      "[\n\r\f]"
+                      t)))
+             (rows (delete nil (mapcar (lambda (it)
+                                         (let* ((parts (reverse
+                                                        (split-string it
+                                                                      "[\s\t]"
+                                                                      t)))
+                                                (cmd (pop parts))
+                                                (key (string-join
+                                                      (reverse parts) "\s")))
+                                           (when (key-valid-p key)
+                                             (cons key
+                                                   cmd))))
+                                       items)))
+             (sorted (length (caar (seq-sort-by
+                                    (lambda (it) (length (car it)))
+                                    '>
+                                    rows))))
+             (max-cmd-length (length (cdr (car (seq-sort-by
+                                                (lambda (it) (length (cdr it)))
+                                                '>
+                                                rows)))))
+             (header))
+        (setq header (pop rows))
+        (setq header (let ((left (concat "| " (car header)
+                                         (make-string (- (1+ sorted)
+                                                         (length
+                                                          (car header)))
+                                                      ?\ )))
+                           (right (concat "| "
+                                          (cdr header)
+                                          (make-string (- (1+ max-cmd-length)
+                                                          (length (cdr header)))
+                                                       ?\ )
+                                          "|")))
+                       (concat
+                        left
+                        right
+                        "\n"
+                        "|"
+                        (make-string
+                         (1- (length left)) ?\-)
+                        "+"
+                        (make-string (- (length right) 2) ?\-)
+                        "|")))
+        (setq rows (mapconcat (lambda (it)
+                                (concat "| "
+                                        (car it)
+                                        (make-string (- (1+ sorted)
+                                                        (length
+                                                         (car it)))
+                                                     ?\ )
+                                        "| "
+                                        (cdr it)
+                                        (make-string (- (1+ max-cmd-length)
+                                                        (length (cdr it)))
+                                                     ?\ )
+                                        "|"))
+                              rows "\n"))
+        (concat header "\n" rows)))))
+
+(defun org-autodoc-annotate-to-org (item-list)
+	"Format ITEM-LIST to org list item.
+ITEM-LIST is a list of (NAME ARGS DOC-STRING DEFINITION-TYPE).
+For example:
+\(\"my-function\" (my-arg) \"Doc string.\" defun)"
+  (let ((name (format "*** ~%s~" (car item-list)))
+        (args (when (nth 1 item-list)
+                (format " %s" (nth 1 item-list))))
+        (doc (when (and (nth 2 item-list)
+                        (stringp (nth 2 item-list)))
+               (string-join (split-string
+                             (with-temp-buffer
+                               (save-excursion (insert
+                                                (nth 2 item-list)))
+                               (while (re-search-forward
+                                       "`\\([a-zZ-A0-9-+]+\\)'" nil t 1)
+                                 (replace-match
+                                  (concat "~"
+                                          (match-string-no-properties 1) "~")))
+                               (buffer-string))
+                             nil t)
+                            "\s")))
+        (title)
+        (keymap (when (and (memq (car (last item-list))
+                                 '(keymap)))
+                  (when-let* ((sym (intern (car item-list)))
+                              (val (and (symbolp sym)
+                                        (boundp sym)
+                                        (symbol-value sym))))
+                    (org-autodoc-format-keymap-to-org val)))))
+    (setq title (string-join (delete nil (list name args)) "\s"))
+    (string-join (delete nil (list title (when doc (substitute-command-keys
+                                                    doc))
+                                   keymap))
+                 "\n")))
 
 (defun org-autodoc-unquote (exp)
   "Return EXP unquoted."
@@ -168,14 +342,95 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
                    'keymap)
                   (t type))))))
 
-(defmacro org-autodoc-with-temp-lisp-buffer (&rest body)
-  "Execute BODY in temp buffer with Emacs Lisp mode without hooks."
-  (declare (indent 2) (debug t))
-  `(with-temp-buffer
-     (erase-buffer)
-     (let (emacs-lisp-mode-hook) (emacs-lisp-mode))
-     (progn
-       ,@body)))
+(defun org-autodoc-format-sexp-to-require (sexp)
+  "Return string with package name if SEXP is valid require call.
+If package is optional, also add suffix (optional)."
+  (pcase sexp
+    (`(require ,(and name
+                     (guard (listp name))
+                     (guard (eq (car-safe name) 'quote))))
+     (cons (org-autodoc-unquote name) nil))
+    (`(require ,(and name
+                     (guard (listp name))
+                     (guard (eq (car-safe name) 'quote)))
+               ,_)
+     (cons (org-autodoc-unquote name) nil))
+    (`(require ,(and name
+                     (guard (listp name))
+                     (guard (eq (car-safe name) 'quote)))
+               ,_
+               ,(and optional (guard (not (eq optional nil)))))
+     (cons (org-autodoc-unquote name) t))))
+
+(defun org-autodoc-parse-require ()
+  "Parse list at point and return alist of form (symbol-name args doc deftype).
+E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
+  (when-let ((sexp (unless (or (nth 4 (syntax-ppss (point)))
+                               (nth 3 (syntax-ppss (point))))
+                     (sexp-at-point))))
+    (when (listp sexp)
+      (org-autodoc-format-sexp-to-require sexp))))
+
+(defun org-autodoc-get-require ()
+  "Return string in `org-mode' format with package dependencies."
+  (let ((requires '())
+        (deps))
+    (save-excursion
+      (goto-char (point-max))
+      (while (org-autodoc-backward-list)
+        (when-let ((sexp (unless (nth 4 (syntax-ppss (point)))
+                           (list-at-point))))
+          (if-let ((dep (org-autodoc-format-sexp-to-require sexp)))
+              (push dep requires)
+            (when (listp sexp)
+              (push sexp deps))))))
+    (when deps
+      (org-autodoc-with-temp-lisp-buffer
+          (insert (prin1-to-string deps))
+          (while (re-search-backward "[(]require[\s\t\n\r\f]+'" nil t 1)
+            (when-let ((found (org-autodoc-parse-require)))
+              (unless (member found requires)
+                (push found requires))))))
+    requires))
+
+(defun org-autodoc-generate-requirenments ()
+  "Return string in `org-mode' format with package dependencies."
+  (let ((package-requires (org-autodoc-get-require-from-package-header))
+        (requires (org-autodoc-get-require))
+        (result))
+    (dolist (it package-requires)
+      (let ((name (if (listp it) (car it) it))
+            (version (when (listp it)
+                       (cadr it)))
+            (found)
+            (str))
+        (setq found (seq-find (lambda (c) (eq (car c) name))
+                              requires))
+        (setq str (string-join
+                   (delq nil
+                         (list
+                          (pcase name
+                            ('emacs (format "Emacs >= %s" (cadr it)))
+                            ((pred symbolp)
+                             (string-join (delete
+                                           nil
+                                           (list (symbol-name name)
+                                                 version))
+                                          " "))
+                            ((pred stringp)
+                             (string-join (delete nil
+                                                  (list name version))
+                                          " ")))
+                          (when found "(optional)")))
+                   "\s"))
+        (push str result)))
+    (nconc result
+           (mapcar
+            (lambda (it)
+              (concat (symbol-name (car it))
+                      (when (cdr it)
+                        " (optional)")))
+            requires))))
 
 (defun org-autodoc-format-keymap-to-alist (keymap)
 	"Convert KEYMAP to alist."
@@ -192,11 +447,19 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
                       "[\n\r\f]"
                       t)))
              (rows (delete nil (mapcar (lambda (it)
-                                         (let* ((parts (reverse (split-string it "[\s\t]" t)))
+                                         (let* ((parts (reverse
+                                                        (split-string it
+                                                                      "[\s\t]"
+                                                                      t)))
                                                 (cmd (pop parts))
-                                                (key (string-join (reverse parts) "\s")))
+                                                (key (string-join
+                                                      (reverse parts) "\s")))
                                            (when (and (key-valid-p key)
-                                                      (not (member cmd '("[lambda]" "[byte-code]"))))
+                                                      (not (member
+                                                            cmd
+                                                            '("[lambda]"
+                                                              "[closure]"
+                                                              "[byte-code]"))))
                                              (cons
                                               key
                                               (intern cmd)))))
@@ -207,7 +470,8 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
   "Return alist of remotes and associated urls (REMOTE-NAME . REMOTE-URL)."
   (when-let ((remotes
               (with-temp-buffer
-                (when (= 0 (apply #'call-process "git" nil t nil '("remote" "-v")))
+                (when (= 0 (apply #'call-process "git" nil t nil
+                                  '("remote" "-v")))
                   (string-trim (buffer-string))))))
     (seq-uniq
      (mapcar (lambda (l) (let ((parts (split-string l)))
@@ -244,9 +508,11 @@ See function `org-autodoc-parse-list-at-point'."
               (setq pl (plist-put pl keyword (list sexp)))))))
       pl)))
 
-(defun org-autodoc-elisp-generate-use-package-string (user reponame &optional
-                                                       commands
-                                                       maps)
+(defun org-autodoc-elisp-generate-use-package-string (reponame
+                                                      &optional
+                                                      user
+                                                      commands
+                                                      maps)
   "Generate string straght and use package installation from USER and REPONAME.
 With COMMANDS also insert :commands.
 With MAPS also insert :bind."
@@ -254,53 +520,50 @@ With MAPS also insert :bind."
       (insert
        "(use-package " reponame ")")
       (forward-char -1)
-    (newline-and-indent)
-    (insert ":straight (" reponame ")")
-    (forward-char -1)
-    (newline-and-indent)
-    (insert (format ":repo \"%s/%s\"" user reponame))
-    (newline-and-indent)
-    (insert ":type git")
-    (newline-and-indent)
-    (insert ":host github")
-    (forward-char 1)
-    (when maps
-      (let ((names (mapcar (lambda (it) (symbol-name (car it)))
-                           maps)))
-        (setq commands (delete nil
-                               (mapcar
-                                (lambda (it) (unless (member (car it) names)
-                                          it))
-                                commands))))
+    (when (and user reponame)
       (newline-and-indent)
-      (insert ":bind ()")
+      (insert ":straight (" reponame ")")
       (forward-char -1)
-      (dotimes (i (length maps))
-        (let ((it (nth i maps)))
-          (let ((name (symbol-name (car it)))
-                (alist (org-autodoc-format-keymap-to-alist (cdr it)))
-                (el))
+      (newline-and-indent)
+      (insert (format ":repo \"%s/%s\"" user reponame))
+      (newline-and-indent)
+      (insert ":type git")
+      (newline-and-indent)
+      (insert ":host github")
+      (forward-char 1))
+    (let ((key-commands))
+      (when maps
+        (newline-and-indent)
+        (insert ":bind ()")
+        (forward-char -1)
+        (dotimes (i (length maps))
+          (let ((it (nth i maps)))
+            (let ((name (symbol-name (car it)))
+                  (alist (org-autodoc-format-keymap-to-alist (cdr it)))
+                  (el))
+              (when (> i 0)
+                (newline-and-indent))
+              (insert "(:map " name ")")
+              (forward-char -1)
+              (while (setq el (pop alist))
+                (newline-and-indent)
+                (insert (prin1-to-string el))
+                (push (symbol-name (cdr el)) key-commands))
+              (forward-char 1))))
+        (forward-char 1))
+      (setq commands (seq-difference commands key-commands))
+      (when commands
+        (newline-and-indent)
+        (insert ":commands ()")
+        (forward-char -1)
+        (dotimes (i (length commands))
+          (let ((cell (nth i commands)))
             (when (> i 0)
               (newline-and-indent))
-            (insert "(:map " name ")")
-            (forward-char -1)
-            (while (setq el (pop alist))
-              (newline-and-indent)
-              (insert (prin1-to-string el)))
-            (forward-char 1))))
-      (forward-char 1))
-    (when commands
-      (newline-and-indent)
-      (insert ":commands ()")
-      (forward-char -1)
-      (dotimes (i (length commands))
-        (let ((cell (nth i commands)))
-          (when (> i 0)
-            (newline-and-indent))
-          (insert (car cell))))
-      (forward-char 1))
-    (forward-sexp -1)
-    (buffer-string)))
+            (insert cell)))
+        (forward-char 1))
+      (forward-sexp -1)
+      (buffer-substring-no-properties (point-min) (point-max)))))
 
 (defun org-autodoc-annotate-with (prefix fn)
   "Return string of grouped annotations.
@@ -331,16 +594,49 @@ results of calling FN with list of (symbol-name args doc deftype)."
                    ,(concat " --file " (or file buffer-file-name))
                    "-l "
                    ,org-autodoc-load-filename
+                   ,(if file
+                        (concat "-l " file)
+                      "")
                    "\s"
                    " --eval "
                    ,(prin1-to-string (if fn
                                          (format
-                                          "(progn (eval-buffer) %s)" fn)
+                                          "(progn %s)" fn)
                                        (format "(print (eval-buffer))"))))
                  "\s")))
 
+(defun org-autodoc-annotate-as-org-list (sexps)
+  "Return string with generetad from SEXPS annotations as org list items."
+  (mapconcat
+   (lambda (s) (org-autodoc-annotate-to-org s))
+   sexps "\n"))
+
+(defun org-autodoc-get-require-from-package-header ()
+  "Return list of packages defined in Package-Requires header."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^;;[\s]Package-Requires:\\([^\n]+\\)?" nil t 1)
+      (car (read-from-string (match-string-no-properties 1))))))
+
 ;;;###autoload
-(defun org-autodoc-org-annotation (&optional output-file)
+(defun org-autodoc-insert-use-package (&optional library)
+  "Insert `use-package' skeleton for LIBRARY."
+  (interactive)
+  (let ((orig-buffer (current-buffer)))
+    (when-let* ((lib (or library (read-library-name)))
+                (file (find-library-name lib))
+                (str (with-current-buffer (find-file-noselect file)
+                       (eval-buffer)
+                       (org-autodoc-elisp-generate-use-package-string
+                        lib nil
+                        (mapcar #'car (plist-get (org-autodoc-scan-buffer)
+                                                :interactive))
+                        (org-autodoc-scan-get-buffer-maps)))))
+      (with-current-buffer orig-buffer
+        (insert str)))))
+
+;;;###autoload
+(defun org-autodoc-org-annotation ()
 	"Return string with readme template in org mode format.
 If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
   (when-let* ((remote (cdr (car (org-autodoc-git-remotes-alist))))
@@ -356,43 +652,46 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
                                 2)))
               (user (pop parts))
               (name (pop parts)))
-    (let ((items (org-autodoc-scan-buffer))
+    (let ((requirements (org-autodoc-generate-requirenments))
           (str))
       (setq str (string-join
-                 (list
-                  (format "* %s" name)
-                  "** Installation"
-                  "*** Manually"
-                  "Download repository and it to your load path in your init file:"
-                  "#+begin_src elisp :eval no"
-                  (format "(add-to-list 'load-path \"/path/to/%s/\")" name)
-                  (format "(require '%s)" name)
-                  "#+end_src"
-                  "*** With use-package and straight"
-                  "#+begin_src elisp :eval no"
-                  (org-autodoc-elisp-generate-use-package-string
-                   user name
-                   (plist-get items :interactive)
-                   (org-autodoc-scan-get-buffer-maps))
-                  "#+end_src"
-                  (org-autodoc-annotate-with
-                   "** "
-                   'org-autodoc-annotate-as-org-list))
+                 (delq nil
+                       `(,(format "* %s" name)
+                         ,(when requirements
+                            (concat "** Requirements\n\n"
+                                    (mapconcat (apply-partially #'format "+ %s")
+                                               requirements "\n")))
+                         "** Installation"
+                         "*** Manually"
+                         "Download repository and it to your load path in your init file:"
+                         "#+begin_src elisp :eval no"
+                         ,(format "(add-to-list 'load-path \"/path/to/%s)"
+                                  name)
+                         ,(format "(require '%s)" name)
+                         "#+end_src"
+                         "*** With use-package and straight"
+                         "#+begin_src elisp :eval no"
+                         ,(org-autodoc-elisp-generate-use-package-string
+                           name user
+                           (mapcar #'car (plist-get (org-autodoc-scan-buffer)
+                                                    :interactive))
+                           (org-autodoc-scan-get-buffer-maps))
+                         "#+end_src"
+                         ,(org-autodoc-annotate-with
+                           "** "
+                           'org-autodoc-annotate-as-org-list)))
                  "\n\n"))
-      (with-temp-buffer (insert str)
-                        (pp-buffer))
+      (set-text-properties 0 (length str) nil str)
       str)))
 
 ;;;###autoload
 (defun org-autodoc-async ()
-  "Show annotations as org list items."
+  "Load current file in new `emacs' process and generate documentation."
   (interactive)
-  (let* ((temp-file (make-temp-file (concat "annotate-"
-                                            (file-name-base
-                                             buffer-file-name))))
-         (command (org-autodoc-get-emacs-batch-cmd
-                   (format "(org-autodoc-org-annotation \"%s\")"
-                           temp-file))))
+  (let* ((command
+          (org-autodoc-get-emacs-batch-cmd
+           "(message \"%s\" (org-autodoc-org-annotation))"
+           buffer-file-name)))
     (let ((proc)
           (buffer (generate-new-buffer "*org-autodoc-annotation*")))
       (progn
@@ -411,12 +710,41 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
            (let ((output (with-current-buffer
                              (process-buffer process)
                            (buffer-string))))
-             (kill-buffer (process-buffer process))
              (if (= (process-exit-status process) 0)
                  (progn
-                   (when (file-exists-p temp-file)
-                     (find-file temp-file)))
-               (user-error output)))))
+                   (when-let ((buff (process-buffer process)))
+                     (when (and (bufferp buff) (buffer-live-p buff))
+                       (kill-buffer buff)))
+                   (with-current-buffer (get-buffer-create
+                                         "*org-autodoc*")
+                     (let ((inhibit-read-only t))
+                       (erase-buffer)
+                       (insert (replace-regexp-in-string "’" "'" output))
+                       (goto-char (point-max))
+                       (let ((emacs-lisp-mode-hook))
+                         (emacs-lisp-mode)
+                         (while (re-search-backward
+                                 "#[\\+]begin_src" nil t 1)
+                           (when-let*
+                               ((bounds
+                                 (org-autodoc-bounds-of-current-src-block))
+                                (str (buffer-substring-no-properties
+                                      (nth 1 bounds)
+                                      (nth 2 bounds)))
+                                (rep (org-autodoc-with-temp-lisp-buffer
+                                         (insert str)
+                                         (skip-chars-backward "\s\t\n\r\f")
+                                       (forward-sexp -1)
+                                       (indent-sexp)
+                                       (buffer-substring-no-properties
+                                        (point-min) (point-max)))))
+                             (replace-region-contents (nth 1 bounds)
+                                                      (nth 2 bounds)
+                                                      (lambda () rep)))))
+                       (require 'org)
+                       (org-mode)
+                       (pop-to-buffer (current-buffer)))))
+               (pop-to-buffer (process-buffer process))))))
         (require 'comint)
         (when (fboundp 'comint-output-filter)
           (set-process-filter proc #'comint-output-filter))))))
