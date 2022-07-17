@@ -436,7 +436,7 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
 	"Convert KEYMAP to alist."
   (when (keymapp keymap)
     (with-temp-buffer
-      (describe-map-tree keymap)
+      (describe-map-tree keymap nil nil nil nil t)
       (while (re-search-backward "[\n][\n]+" nil t 1)
         (replace-match "\n"))
       (let* ((items (seq-remove
@@ -547,7 +547,14 @@ With MAPS also insert :bind."
               (forward-char -1)
               (while (setq el (pop alist))
                 (newline-and-indent)
-                (insert (prin1-to-string el))
+                (insert  (if (string-match-p "<remap>" (car el))
+                             (concat "([remap " (car (last (split-string
+                                                            (car el)
+                                                            "[\"\s\t<>]"
+                                                            t)))
+                                     "] . "
+                                     (prin1-to-string (cdr el))")")
+                           (prin1-to-string el)))
                 (push (symbol-name (cdr el)) key-commands))
               (forward-char 1))))
         (forward-char 1))
@@ -626,11 +633,11 @@ results of calling FN with list of (symbol-name args doc deftype)."
     (when-let* ((lib (or library (read-library-name)))
                 (file (find-library-name lib))
                 (str (with-current-buffer (find-file-noselect file)
-                       (eval-buffer)
+                       (require (intern lib))
                        (org-autodoc-elisp-generate-use-package-string
                         lib nil
                         (mapcar #'car (plist-get (org-autodoc-scan-buffer)
-                                                :interactive))
+                                                 :interactive))
                         (org-autodoc-scan-get-buffer-maps)))))
       (with-current-buffer orig-buffer
         (insert str)))))
