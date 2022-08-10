@@ -454,12 +454,18 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
                                                 (cmd (pop parts))
                                                 (key (string-join
                                                       (reverse parts) "\s")))
-                                           (when (and (key-valid-p key)
-                                                      (not (member
-                                                            cmd
-                                                            '("[lambda]"
-                                                              "[closure]"
-                                                              "[byte-code]"))))
+                                           (when (and
+                                                  (key-valid-p key)
+                                                  (if (string-match-p "^<" key)
+                                                      (string-match-p
+                                                       "<remap> "
+                                                       key)
+                                                    t)
+                                                  (not (member
+                                                        cmd
+                                                        '("[lambda]"
+                                                          "[closure]"
+                                                          "[byte-code]"))))
                                              (cons
                                               key
                                               (intern cmd)))))
