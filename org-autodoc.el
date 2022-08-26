@@ -218,6 +218,20 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
                               rows "\n"))
         (concat header "\n" rows)))))
 
+(defun org-autodoc-doc-to-org (doc-str)
+  "Transform DOC-STR to org text."
+  (mapconcat
+   (lambda (str) (cond ((and (string-prefix-p "`" str)
+                        (string-suffix-p "'" str))
+                   (concat "~" (substring str 1 (1- (length str))) "~"))
+                  ((let ((case-fold-search nil))
+                     (and (string-match-p "[A-Z]" str)
+                          (not (string-match-p "[A-Z][a-z]" str))))
+                   (concat "~" (downcase str) "~"))
+                  (t str)))
+   (split-string doc-str nil t)
+   "\s"))
+
 (defun org-autodoc-annotate-to-org (item-list)
 	"Format ITEM-LIST to org list item.
 ITEM-LIST is a list of (NAME ARGS DOC-STRING DEFINITION-TYPE).
@@ -228,18 +242,7 @@ For example:
                 (format " %s" (nth 1 item-list))))
         (doc (when (and (nth 2 item-list)
                         (stringp (nth 2 item-list)))
-               (string-join (split-string
-                             (with-temp-buffer
-                               (save-excursion (insert
-                                                (nth 2 item-list)))
-                               (while (re-search-forward
-                                       "`\\([a-zZ-A0-9-+]+\\)'" nil t 1)
-                                 (replace-match
-                                  (concat "~"
-                                          (match-string-no-properties 1) "~")))
-                               (buffer-string))
-                             nil t)
-                            "\s")))
+               (org-autodoc-doc-to-org (nth 2 item-list))))
         (title)
         (keymap (when (and (memq (car (last item-list))
                                  '(keymap)))
