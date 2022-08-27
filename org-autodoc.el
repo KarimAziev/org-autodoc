@@ -82,7 +82,7 @@
     (define-minor-mode . 2)
     (define-generic-mode . 7)))
 
-(defun org-autodoc-bounds-of-current-src-block ()
+(defun org-autodoc-bounds-of-src-block ()
   "Return list of (BLOCK-TYPE BEGINNING END).
 Beginning and end is bounds of inner content. For example: (example 4292 4486)."
   (save-excursion
@@ -221,14 +221,24 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
 (defun org-autodoc-doc-to-org (doc-str)
   "Transform DOC-STR to org text."
   (mapconcat
-   (lambda (str) (cond ((and (string-prefix-p "`" str)
-                        (string-suffix-p "'" str))
-                   (concat "~" (substring str 1 (1- (length str))) "~"))
-                  ((let ((case-fold-search nil))
-                     (and (string-match-p "[A-Z]" str)
-                          (not (string-match-p "[A-Z][a-z]" str))))
-                   (concat "~" (downcase str) "~"))
-                  (t str)))
+   (lambda (str)
+     (let ((prefix (or (string-prefix-p "`" str)
+                       (string-prefix-p "‘" str))))
+       (cond ((and prefix
+                   (string-suffix-p "'" str))
+              (concat "~" (substring str 1 (1- (length str))) "~"))
+             ((and prefix
+                   (string-match-p "'[,.]$" str))
+              (let ((len (length str)))
+                (concat "~" (substring str 1 (1- (1- len)))
+                        (substring str (1- len)
+                                   len)
+                        "~")))
+             ((let ((case-fold-search nil))
+                (and (string-match-p "[A-Z]" str)
+                     (not (string-match-p "[A-Z][a-z]" str))))
+              (concat "~" (downcase str) "~"))
+             (t str))))
    (split-string doc-str nil t)
    "\s"))
 
@@ -729,31 +739,35 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
              (if (= (process-exit-status process) 0)
                  (progn
                    (when-let ((buff (process-buffer process)))
-                     (when (and (bufferp buff) (buffer-live-p buff))
+                     (when (and (bufferp buff)
+                                (buffer-live-p buff))
                        (kill-buffer buff)))
-                   (with-current-buffer (get-buffer-create
-                                         "*org-autodoc*")
+                   (with-current-buffer (get-buffer-create "*org-autodoc*")
                      (let ((inhibit-read-only t))
                        (erase-buffer)
-                       (insert (replace-regexp-in-string "’" "'" output))
+                       (insert
+                        (replace-regexp-in-string "‘" "`"
+                                                  (replace-regexp-in-string
+                                                   "’" "'" output)))
                        (goto-char (point-max))
                        (let ((emacs-lisp-mode-hook))
                          (emacs-lisp-mode)
                          (while (re-search-backward
                                  "#[\\+]begin_src" nil t 1)
-                           (when-let*
-                               ((bounds
-                                 (org-autodoc-bounds-of-current-src-block))
-                                (str (buffer-substring-no-properties
-                                      (nth 1 bounds)
-                                      (nth 2 bounds)))
-                                (rep (org-autodoc-with-temp-lisp-buffer
-                                         (insert str)
-                                         (skip-chars-backward "\s\t\n\r\f")
-                                       (forward-sexp -1)
-                                       (indent-sexp)
-                                       (buffer-substring-no-properties
-                                        (point-min) (point-max)))))
+                           (when-let* ((bounds
+                                        (org-autodoc-bounds-of-src-block))
+                                       (str (buffer-substring-no-properties
+                                             (nth 1 bounds)
+                                             (nth 2 bounds)))
+                                       (rep (org-autodoc-with-temp-lisp-buffer
+                                                (insert str)
+                                                (skip-chars-backward
+                                                 "\s\t\n\r\f")
+                                              (forward-sexp -1)
+                                              (indent-sexp)
+                                              (buffer-substring-no-properties
+                                               (point-min)
+                                               (point-max)))))
                              (replace-region-contents (nth 1 bounds)
                                                       (nth 2 bounds)
                                                       (lambda () rep)))))
