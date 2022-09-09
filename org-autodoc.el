@@ -42,6 +42,7 @@
     (:define-compilation-mode . "Compilation mode")
     (:easy-mmode-define-minor-mode . "Minor mode")
     (:define-minor-mode . "Minor mode")
+    (:transient-define-prefix . "Transient")
     (:define-generic-mode . "Generic mode")
     (:keymap . "Keymaps")
     (:defhydra . "Hydras")
@@ -65,6 +66,7 @@
     (defvar . 3)
     (defvar-local . 3)
     (defun . 3)
+    (transient-define-prefix . 3)
     (defmacro . 3)
     (defsubst . 3)
     (define-derived-mode . 4)
@@ -663,7 +665,7 @@ results of calling FN with list of (symbol-name args doc deftype)."
 
 ;;;###autoload
 (defun org-autodoc-org-annotation ()
-	"Return string with readme template in org mode format.
+  "Return string with readme template in org mode format.
 If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
   (when-let* ((remote (cdr (car (org-autodoc-git-remotes-alist))))
               (parts (reverse
@@ -679,10 +681,22 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
               (user (pop parts))
               (name (pop parts)))
     (let ((requirements (org-autodoc-generate-requirenments))
+          (synopsis (progn
+                      (require 'lisp-mnt nil t)
+                      (when-let ((descr
+                                  (when (fboundp 'lm-synopsis)
+                                    (lm-synopsis))))
+                        (setq descr (string-trim descr))
+                        (capitalize (if (and
+                                         (> (length descr) 0)
+                                         (not (string-match-p "\\.$" descr)))
+                                        (concat descr ".")
+                                      descr)))))
           (str))
       (setq str (string-join
                  (delq nil
                        `(,(format "* %s" name)
+                         ,synopsis
                          ,(when requirements
                             (concat "** Requirements\n\n"
                                     (mapconcat (apply-partially #'format "+ %s")
