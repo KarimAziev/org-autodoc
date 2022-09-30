@@ -147,78 +147,114 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
      (progn
        ,@body)))
 
+(defun org-autodoc-measure-columns (rows &optional head)
+  "Return list with longest columns sizes in ROWS and HEAD."
+  (let ((columns-number (length (car (seq-sort-by #'length '> rows))))
+        (items (if head (append (list head)
+                                rows)
+                 rows))
+        (lengths))
+    (dotimes (idx columns-number)
+      (let ((longest
+             (nth idx
+                  (car
+                   (seq-sort-by (lambda (it)
+                                  (if-let ((col (nth idx it)))
+                                      (length (format "%s" col))
+                                    0))
+                                #'> items)))))
+        (setq lengths (nconc lengths (list (if longest
+                                               (length (format "%s" longest))
+                                             0))))))
+    lengths))
+
+(defun org-autodoc-render-list-to-org-table (rows &optional head)
+  "Convert list or vector of ROWS to org table wit HEAD."
+  (when (vectorp rows)
+    (setq rows (append rows nil)))
+  (setq rows (mapcar (lambda (r)
+                       (cond ((vectorp r)
+                              (append r nil))
+                             ((not (listp (cdr r)))
+                              (list (car r)
+                                    (cdr r)))
+                             (t r)))
+                     rows))
+  (let* ((columns (seq-map-indexed
+                   (lambda (_val idx)
+                     (or
+                      (format "%s" (or (nth idx head)
+                                       (1+ idx)))))
+                   (car (seq-sort-by #'length '> rows))))
+         (columns-sizes (org-autodoc-measure-columns rows head))
+         (formatted-rows
+          (mapcar (lambda (r)
+                    (mapcar
+                     (apply-partially #'format "%s") r))
+                  rows))
+         (rows-str (mapconcat
+                    (lambda (row)
+                      (concat
+                       "|"
+                       (string-join
+                        (seq-map-indexed
+                         (lambda (col idx)
+                           (setq col (if col (format " %s " col)))
+                           (let ((indent
+                                  (- (+ 2 (nth idx columns-sizes))
+                                     (length (or col "")))))
+                             (concat col (make-string indent ?\ ))))
+                         row)
+                        "|")
+                       "|"))
+                    formatted-rows "\n"))
+         (header (concat
+                  "|"
+                  (string-join
+                   (seq-map-indexed
+                    (lambda (col idx)
+                      (setq col (if col (format " %s " col)))
+                      (let ((indent
+                             (- (+ 2
+                                   (nth idx columns-sizes))
+                                (length col))))
+                        (if (> indent 0)
+                            (concat col (make-string indent ?\ ))
+                          col)))
+                    columns)
+                   "|")
+                  "| " "\n" (concat "|"
+                                    (string-join
+                                     (seq-map-indexed
+                                      (lambda (_col idx)
+                                        (make-string
+                                         (+ 2 (nth idx columns-sizes))
+                                         ?-))
+                                      columns)
+                                     "+")
+                                    "|"))))
+    (string-join
+     (list header rows-str)
+     "\n")))
+
 (defun org-autodoc-format-keymap-to-org (keymap)
   "Convert KEYMAP to org table."
-  (when (keymapp keymap)
-    (with-temp-buffer
-      (describe-map-tree keymap nil nil nil nil t)
-      (while (re-search-backward "[\n][\n]+" nil t 1)
-        (replace-match "\n"))
-      (let* ((items (seq-remove
-                     (apply-partially #'string-match-p "^[<]menu-bar[>]")
-                     (split-string
-                      (string-trim (buffer-substring-no-properties
-                                    (point-min) (point-max)))
-                      "[\n\r\f]"
-                      t)))
-             (rows (delete nil (mapcar (lambda (it)
-                                         (let* ((parts (reverse
-                                                        (split-string it
-                                                                      "[\s\t]"
-                                                                      t)))
-                                                (cmd (pop parts))
-                                                (key (string-join
-                                                      (reverse parts) "\s")))
-                                           (when (key-valid-p key)
-                                             (cons key
-                                                   cmd))))
-                                       items)))
-             (sorted (length (caar (seq-sort-by
-                                    (lambda (it) (length (car it)))
-                                    '>
-                                    rows))))
-             (max-cmd-length (length (cdr (car (seq-sort-by
-                                                (lambda (it) (length (cdr it)))
-                                                '>
-                                                rows)))))
-             (header))
-        (setq header (pop rows))
-        (setq header (let ((left (concat "| " (car header)
-                                         (make-string (- (1+ sorted)
-                                                         (length
-                                                          (car header)))
-                                                      ?\ )))
-                           (right (concat "| "
-                                          (cdr header)
-                                          (make-string (- (1+ max-cmd-length)
-                                                          (length (cdr header)))
-                                                       ?\ )
-                                          "|")))
-                       (concat
-                        left
-                        right
-                        "\n"
-                        "|"
-                        (make-string
-                         (1- (length left)) ?\-)
-                        "+"
-                        (make-string (- (length right) 2) ?\-)
-                        "|")))
-        (setq rows (mapconcat (lambda (it)
-                                (concat "| "
-                                        (car it)
-                                        (make-string (- (1+ sorted)
-                                                        (length
-                                                         (car it)))
-                                                     ?\ )
-                                        "| "
-                                        (cdr it)
-                                        (make-string (- (1+ max-cmd-length)
-                                                        (length (cdr it)))
-                                                     ?\ )
-                                        "|"))
-                              rows "\n"))
-        (concat header "\n" rows)))))
+  (when-let* ((map (and (keymapp keymap)
+                        (org-autodoc-format-keymap-to-alist keymap)))
+              (filtered-map
+               (if-let* ((package-name (org-autodoc-get-provide))
+                         (lib (symbol-name package-name)))
+                   (seq-filter
+                    (lambda (it)
+                      (string-prefix-p lib
+                                       (symbol-name
+                                        (cdr
+                                         it))) )
+                    map)
+                 map)))
+    (org-autodoc-render-list-to-org-table
+     filtered-map
+     (list "Key" "Command"))))
 
 (defun org-autodoc-doc-to-org (doc-str)
   "Transform DOC-STR to org text."
@@ -324,6 +360,23 @@ Return new position if changed, nil otherwise."
                 (point)))
     (unless (equal pos end)
       end)))
+
+(defun org-autodoc-get-provide ()
+  "Parse list at point and return alist of form (symbol-name args doc deftype).
+E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
+  (save-excursion
+    (goto-char (point-max))
+    (let ((found))
+      (while (and
+              (not found)
+              (org-autodoc-backward-list))
+        (let ((l (list-at-point)))
+          (when (and (listp l)
+                     (symbolp (car l))
+                     (eq 'provide (car l))
+                     (symbolp (org-autodoc-unquote (nth 1 l))))
+            (setq found (org-autodoc-unquote (nth 1 l))))))
+      found)))
 
 (defun org-autodoc-parse-list-at-point ()
   "Parse list at point and return alist of form (symbol-name args doc deftype).
@@ -448,17 +501,18 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
             requires))))
 
 (defun org-autodoc-format-keymap-to-alist (keymap)
-	"Convert KEYMAP to alist."
+  "Convert KEYMAP to alist."
   (when (keymapp keymap)
     (with-temp-buffer
-      (describe-map-tree keymap nil nil nil nil t)
+      (describe-map-tree keymap t nil nil nil t t t)
       (while (re-search-backward "[\n][\n]+" nil t 1)
         (replace-match "\n"))
       (let* ((items (seq-remove
                      (apply-partially #'string-match-p "^[<]menu-bar[>]")
                      (split-string
                       (string-trim (buffer-substring-no-properties
-                                    (point-min) (point-max)))
+                                    (point-min)
+                                    (point-max)))
                       "[\n\r\f]"
                       t)))
              (rows (delete nil (mapcar (lambda (it)
@@ -702,8 +756,8 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
                                     (mapconcat (apply-partially #'format "+ %s")
                                                requirements "\n")))
                          "** Installation"
-                         "*** Manually"
-                         "Download repository and it to your load path in your init file:"
+                         "*** Manual"
+                         "Download the source code and put it wherever you like and add the directory to the load path:"
                          "#+begin_src elisp :eval no"
                          ,(format "(add-to-list 'load-path \"/path/to/%s)"
                                   name)
