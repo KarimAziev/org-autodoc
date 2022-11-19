@@ -34,7 +34,10 @@ Download repository and it to your load path in your init file:
 			       :type git
 			       :host github)
 	:commands (org-autodoc-async
-			       org-autodoc-insert-use-package))
+			       org-autodoc-insert-use-package
+             org-autodoc-insert-doc-string))
+
+
 
 #+end_src
 
@@ -50,3 +53,5 @@ Read a library and interactivelly insert skeleton for ~use-package~.
 Skeleton includes commands and bindings.
 
 [[./org-autodoc-insert-use-package.gif]]
+** ~org-autodoc-insert-doc-string~
+Insert documentation template for current definition.

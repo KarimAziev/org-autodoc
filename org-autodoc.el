@@ -6,7 +6,7 @@
 ;; URL: https://github.com/KarimAziev/org-autodoc
 ;; Keywords: convenience, docs
 ;; Version: 0.2.0
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "28.1") (org "9.5.5"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -31,10 +31,45 @@
 
 ;;; Code:
 
-(require 'shell)
-(require 'find-func)
 
+
+(require 'subr-x)
+(declare-function find-library-name "find-func")
 (defvar org-autodoc-load-filename (or load-file-name buffer-file-name))
+
+(defvar org-autodoc-docstring-positions
+  (mapcar (lambda (it)
+            (setcar it (intern (car it)))
+            it)
+          '(("defun" . 3)
+            ("defmacro" . 3)
+            ("defsubst" . 4)
+            ("defcustom" . 3)
+            ("define-skeleton" . 2)
+            ("define-compilation-mode" . 3)
+            ("define-minor-mode" . 2)
+            ("define-derived-mode" . 4)
+            ("define-generic-mode" . 8)
+            ("ert-deftest" . 3)
+            ("cl-defun" . 3)
+            ("cl-defsubst" . 3)
+            ("cl-defmacro" . 3)
+            ("cl-defgeneric" . 3)
+            ("cl-defmethod" . 6)
+            ("defalias" . 4)
+            ("defhydra" . 4)
+            ("defgroup" . 3)
+            ("deftheme" . 3)
+            ("define-widget" . 3)
+            ("transient-define-suffix" . 3)
+            ("transient-define-argument" . 3)
+            ("transient-define-prefix" . 3)
+            ("defvar" . 4)
+            ("defvar-local" . 4)
+            ("cl-defstruct" . 3)
+            ("easy-mmode-define-minor-mode" . 2)
+            ("transient-define-infix" . 3)
+            ("defface" . 3))))
 
 (defvar org-autodoc-group-annotation-alist
   '((:define-derived-mode . "Major mode")
@@ -61,28 +96,56 @@
     (:defsubst . "Inline Functions")
     (:cl-defsubst . "Inline Functions")))
 
-(defvar org-autodoc-docstring-positions
-  '((defcustom . 3)
-    (defvar . 3)
-    (defvar-local . 3)
-    (defun . 3)
-    (transient-define-prefix . 3)
-    (defmacro . 3)
-    (defsubst . 3)
-    (define-derived-mode . 4)
-    (define-generic-mode . 7)
-    (ert-deftest . 3)
-    (cl-defun . 3)
-    (cl-defsubst . 3)
-    (cl-defmacro . 3)
-    (cl-defmethod . 5)
-    (defhydra . 3)
-    (cl-defstruct . 2)
-    (define-derived-mode . 4)
-    (define-compilation-mode . 3)
-    (easy-mmode-define-minor-mode . 2)
-    (define-minor-mode . 2)
-    (define-generic-mode . 7)))
+(defmacro org-autodoc--rpartial (fn &rest args)
+  "Return a partial application of FN to right-hand ARGS.
+
+ARGS is a list of the last N arguments to pass to FN. The result is a new
+function which does the same as FN, except that the last N arguments are fixed
+at the values with which this function was called."
+  (declare (side-effect-free t))
+  `(lambda (&rest pre-args)
+     ,(car (list (if (symbolp fn)
+                     `(apply #',fn (append pre-args (list ,@args)))
+                   `(apply ,fn (append pre-args (list ,@args))))))))
+
+(defmacro org-autodoc-pipe (&rest functions)
+  "Return left-to-right composition from FUNCTIONS."
+  (declare (debug t) (pure t) (side-effect-free t))
+  `(lambda (&rest args)
+     ,@(let ((init-fn (pop functions)))
+         (list
+          (seq-reduce
+           (lambda (acc fn)
+             (if (symbolp fn)
+                 `(funcall #',fn ,acc)
+               `(funcall ,fn ,acc)))
+           functions
+           (if (symbolp init-fn)
+               `(apply #',init-fn args)
+             `(apply ,init-fn args)))))))
+
+(defmacro org-autodoc--compose (&rest functions)
+  "Return right-to-left composition from FUNCTIONS."
+  (declare (debug t) (pure t) (side-effect-free t))
+  `(org-autodoc-pipe ,@(reverse functions)))
+
+(defmacro org-autodoc-with-temp-lisp-buffer (&rest body)
+  "Execute BODY in temp buffer with Emacs Lisp mode without hooks."
+  (declare (indent 2) (debug t))
+  `(with-temp-buffer
+     (erase-buffer)
+     (let (emacs-lisp-mode-hook) (emacs-lisp-mode))
+     (progn
+       ,@body)))
+
+(defmacro org-autodoc--up-list-until-nil (&rest body)
+  "Move backward up across and execute BODY until it's return value is nil."
+  `(save-excursion
+    (let ((result))
+      (while (and (null result)
+                  (org-autodoc-backward-up-list))
+        (setq result (progn ,@body)))
+      result)))
 
 (defun org-autodoc-bounds-of-src-block ()
   "Return list of (BLOCK-TYPE BEGINNING END).
@@ -137,15 +200,6 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
                   (list (downcase structure-type)
                         (point)
                         end))))))))))
-
-(defmacro org-autodoc-with-temp-lisp-buffer (&rest body)
-  "Execute BODY in temp buffer with Emacs Lisp mode without hooks."
-  (declare (indent 2) (debug t))
-  `(with-temp-buffer
-     (erase-buffer)
-     (let (emacs-lisp-mode-hook) (emacs-lisp-mode))
-     (progn
-       ,@body)))
 
 (defun org-autodoc-measure-columns (rows &optional head)
   "Return list with longest columns sizes in ROWS and HEAD."
@@ -324,6 +378,8 @@ SYMB can be either symbol, either string."
             "defsubst"
             "cl-defun"
             "define-inline"
+            "cl-defgeneric"
+            "cl-defmethod"
             "define-advice")))
 
 (defun org-autodoc-symbol-keymapp (sym)
@@ -704,6 +760,7 @@ results of calling FN with list of (symbol-name args doc deftype)."
 (defun org-autodoc-insert-use-package (&optional library)
   "Insert `use-package' skeleton for LIBRARY."
   (interactive)
+  (require 'find-func)
   (let ((orig-buffer (current-buffer)))
     (when-let* ((lib (or library (read-library-name)))
                 (file (find-library-name lib))
@@ -716,6 +773,8 @@ results of calling FN with list of (symbol-name args doc deftype)."
                         (org-autodoc-scan-get-buffer-maps)))))
       (with-current-buffer orig-buffer
         (insert str)))))
+
+
 
 ;;;###autoload
 (defun org-autodoc-org-annotation ()
@@ -846,6 +905,366 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
         (require 'comint)
         (when (fboundp 'comint-output-filter)
           (set-process-filter proc #'comint-output-filter))))))
+
+(defvar-local org-autodoc-current-doc-suffix nil)
+
+(defvar-local org-autodoc-current-doc-prefix nil)
+
+(defvar org-autodoc-symbols-to-narrow (mapcar #'car
+                                              org-autodoc-docstring-positions))
+
+(defun org-autodoc-re-search-backward-inner (regexp &optional bound count)
+  "This function is helper for `km-elisp-re-search-backward'.
+Search backward from point for regular expression REGEXP.
+The optional argument BOUND is a buffer position that bounds
+  the search.  The match found must not end after that position.  A
+  value of nil means search to the end of the accessible portion of
+  the buffer.
+The optional argument COUNT is a number that indicates the
+  search direction and the number of occurrences to search for."
+  (let ((parse))
+    (while (> count 0)
+      (with-syntax-table emacs-lisp-mode-syntax-table
+        (re-search-backward regexp bound)
+        (setq parse (syntax-ppss))
+        (cond ((and (or (nth 3 parse))
+                    (nth 8 parse))
+               (goto-char (nth 8 parse)))
+              ((and (nth 4 parse)
+                    (nth 8 parse))
+               (goto-char (nth 8 parse)))
+              (t
+               (setq count (1- count)))))))
+  (point))
+
+(defun org-autodoc-re-search-forward-inner (regexp &optional bound count)
+  "This function is helper for `org-autodoc-re-search-forward'.
+Search forward from point for regular expression REGEXP.
+The optional argument BOUND is a buffer position that bounds
+  the search.  The match found must not end after that position.  A
+  value of nil means search to the end of the accessible portion of
+  the buffer.
+The optional argument COUNT is a number that indicates the
+  search direction and the number of occurrences to search for."
+  (let ((parse))
+    (while (> count 0)
+      (with-syntax-table emacs-lisp-mode-syntax-table
+        (re-search-forward regexp bound)
+        (setq parse (syntax-ppss))
+        (cond ((and (nth 3 parse)
+                    (nth 8 parse))
+               (goto-char (nth 8 parse))
+               (forward-sexp))
+              ((and (nth 4 parse)
+                    (nth 8 parse))
+               (goto-char (nth 8 parse))
+               (forward-line))
+              (t
+               (setq count (1- count)))))))
+  (point))
+
+(defun org-autodoc-move-with (fn &optional n)
+  "Move by calling FN N times.
+Return new position if changed, nil otherwise."
+  (unless n (setq n 1))
+  (when-let ((str-start (nth 8 (syntax-ppss (point)))))
+    (goto-char str-start))
+  (let ((init-pos (point))
+        (pos)
+        (count n))
+    (while (and (not (= count 0))
+                (when-let ((end (ignore-errors
+                                  (funcall fn)
+                                  (point))))
+                  (unless (= end (or pos init-pos))
+                    (setq pos end))))
+      (setq count (1- count)))
+    (if (= count 0)
+        pos
+      (goto-char init-pos)
+      nil)))
+
+(defun org-autodoc-group-with (fn items &optional transform-fn)
+  "Group ITEMS by calling FN with every item.
+FN should return key.
+TRANSFORM-FN should return transformed item."
+  (seq-reduce (lambda (acc it)
+                (let* ((key (funcall fn it))
+                       (val (if transform-fn (funcall transform-fn it) it))
+                       (cell (assoc key acc))
+                       (group (if cell
+                                  (append (cdr cell)
+                                          (list val))
+                                (list val))))
+                  (if cell
+                      (setcdr cell group)
+                    (push (cons key group) acc))
+                  acc))
+              (seq-copy items) '()))
+
+(defun org-autodoc-backward-up-list (&optional arg)
+  "Move backward up across ARG balanced group of parentheses.
+Return new position if changed, nil otherwise."
+  (org-autodoc-move-with 'backward-up-list arg))
+
+(defun org-autodoc-shared-start (s1 s2)
+  "Return the longest prefix S1 and S2 have in common."
+  (declare (pure t) (side-effect-free t))
+  (let ((search-length (min (length s1) (length s2)))
+        (i 0))
+    (while (and (< i search-length)
+                (= (aref s1 i) (aref s2 i)))
+      (setq i (1+ i)))
+    (substring s1 0 i)))
+
+(defun org-autodoc-re-search-forward (regexp &optional bound noerror count)
+  "Search forward from point for REGEXP ignoring elisp comments and strings.
+Arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-forward'."
+  (unless count (setq count 1))
+  (let ((init-point (point))
+        (search-fun
+         (cond ((< count 0) (setq count (- count))
+                #'org-autodoc-re-search-backward-inner)
+               ((> count 0) #'org-autodoc-re-search-forward-inner)
+               (t #'ignore))))
+    (condition-case err
+        (funcall search-fun regexp bound count)
+      (search-failed
+       (goto-char init-point)
+       (unless noerror
+         (signal (car err) (cdr err)))))))
+
+(defun org-autodoc-shared-name-start (s1 s2)
+  "Return the longest prefix S1 and S2 splitted."
+  (let ((s1-names (split-string s1 "[-]"))
+        (s2-names (split-string s2 "[-]"))
+        (result))
+    (while (when-let ((res1 (pop s1-names))
+                      (res2 (pop s2-names)))
+             (when (string= res1 res2)
+               (setq result (push res1 result)))))
+    (when result (string-join (reverse result) "-"))))
+
+(defun org-autodoc-group-by-prefixes (strings)
+  "Group STRINGS by longest common prefixes."
+  (org-autodoc-group-with
+   (lambda (str)
+     (or (car
+          (seq-sort-by
+           #'length
+           '>
+           (delq nil
+                 (mapcar
+                  (apply-partially
+                   #'org-autodoc-shared-name-start
+                   str)
+                  (remove str strings)))))
+         ""))
+   strings))
+
+
+(defun org-autodoc-elisp-get-defun-names ()
+  "Return names of functions defined with in current buffer."
+  (let ((founds))
+    (save-excursion
+      (goto-char (point-min))
+      (while (org-autodoc-re-search-forward
+              (concat "[(]\\(\\(\\(cl-\\)?" (string-join
+                                             (mapcar (org-autodoc--compose
+                                                      symbol-name
+                                                      car)
+                                                     org-autodoc-docstring-positions)
+                                             "\\|")
+                      "\\)[\s\t\n]+\\([a-z][^\s\t\n;]+\\)\\)")
+              nil t 1)
+        (let ((name (match-string-no-properties 4)))
+          (save-excursion
+            (org-autodoc-backward-up-list)
+            (unless (or (looking-back "['`]" 0)
+                        (string-match-p "[)(]" name))
+              (push name founds))))))
+    founds))
+
+(defun org-autodoc-count-matches-by-re (re str &optional start end)
+  "Count occurrences of RE in STR.
+START, inclusive, and END, exclusive, delimit the part of s to
+match.  START and END are both indexed starting at 1; the initial
+character in s is index 1."
+  (save-match-data
+    (with-temp-buffer
+      (insert str)
+      (goto-char (point-min))
+      (count-matches re (or start 1) (or end (point-max))))))
+
+(defun org-autodoc--elisp-parse-list-at-point ()
+  "Parse list at point and return alist of form (symbol-name args doc deftype).
+E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
+  (when-let* ((sexp (unless (nth 4 (syntax-ppss (point)))
+                      (when-let ((s (sexp-at-point)))
+                        (when (listp s)
+                          s))))
+              (type (car sexp))
+              (id (org-autodoc-unquote
+                   (when (symbolp (nth 1 sexp))
+                     (nth 1 sexp))))
+              (name (symbol-name id)))
+    (let ((doc
+           (when-let ((pos (cdr (assq type org-autodoc-docstring-positions))))
+             (when (and (nth pos sexp)
+                        (stringp (nth pos sexp)))
+               (nth pos sexp))))
+          (args (and (org-autodoc-function-p type)
+                     (nth 2 sexp)))
+          (interactivep (and (org-autodoc-function-p type)
+                             (or (and
+                                  (nth 3 sexp)
+                                  (listp (nth 3 sexp))
+                                  (symbolp (car (nth 3 sexp)))
+                                  (eq 'interactive (car (nth 3 sexp))))
+                                 (and
+                                  (nth 4 sexp)
+                                  (listp (nth 4 sexp))
+                                  (symbolp (car (nth 4 sexp)))
+                                  (eq 'interactive (car (nth 4 sexp)))))))
+          (keymap (or (org-autodoc-symbol-keymapp id)
+                      (org-autodoc-symbol-sexp-keymapp sexp)))
+          (autoloaded (save-excursion
+                        (forward-line -1)
+                        (looking-at ";;;###autoload[^a-z]"))))
+      (list
+       :name name
+       :args args
+       :doc doc
+       :type type
+       :id id
+       :keymap keymap
+       :autoloaded autoloaded
+       :interactive interactivep))))
+
+(defun org-autodoc-elisp-bounds-of-def-sexp (&optional symbols)
+  "Return bounds of first parent sexp which head is a member of SYMBOLS.
+If SYMBOLS is nil use `km-elisp-function-symbols'"
+  (org-autodoc--up-list-until-nil
+   (when-let ((sexp (sexp-at-point)))
+     (when-let ((start (and (listp sexp)
+                            (nth 1 sexp)
+                            (memq (car sexp)
+                                  (or (if (listp symbols)
+                                          symbols
+                                        (and symbols (list symbols)))
+                                      org-autodoc-symbols-to-narrow))
+                            (point))))
+       (forward-sexp 1)
+       (cons start (point))))))
+
+(defun org-autodoc-cycle-elisp-doc-detect-prefixes ()
+  "Return longest prefix for functions in current buffer."
+  (org-autodoc-group-by-prefixes (org-autodoc-elisp-get-defun-names)))
+
+(defun org-autodoc-cycle-generate-function-docs (prefix function-name arguments
+                                                        &optional ending)
+  "Generate a verb based on FUNCTION-NAME with trimmed PREFIX and ARGUMENTS."
+  (let ((replacements '(("&optional" . "Optional argument %s is\s.")
+                        ("&rest" . "")
+                        ("&key" . "")
+                        ("buffer" . "IN BUFFER")
+                        ("file" . "in FILE")
+                        ("pos" . "at POS")))
+        (verb (if
+                  prefix
+                  (string-trim
+                   (replace-regexp-in-string "-" "\s"
+                                             (replace-regexp-in-string
+                                              (concat "^"  prefix)
+                                              ""
+                                              function-name)))
+                function-name))
+        (args (if (stringp arguments)
+                  (split-string
+                   (replace-regexp-in-string "[)(]" "" arguments) nil t)
+                (mapcar #'symbol-name arguments)))
+        (curr)
+        (formatted-args)
+        (parts)
+        (first-word))
+    (setq parts (delete nil (append (split-string verb)
+                                    (list ending))))
+    (setq first-word (capitalize (or (pop parts) "")))
+    (setq verb (concat first-word
+                       (if parts (concat " " (string-join parts "\s"))
+                         "")))
+    (while (setq curr (pop args))
+      (let ((rep (cdr (assoc curr replacements)))
+            (result))
+        (setq result
+              (if (null rep)
+                  (format "%s is ." (upcase curr))
+                (if-let ((count (org-autodoc-count-matches-by-re "%s" rep)))
+                    (let ((next-args (mapcar #'upcase (seq-take args count))))
+                      (setq args (seq-drop args count))
+                      (apply #'format (append (list rep) next-args)))
+                  rep)))
+        (unless (string-empty-p result)
+          (push result formatted-args))))
+    (setq formatted-args (string-join (reverse formatted-args) "\n"))
+    (string-trim-right (concat verb "." "\n" (or formatted-args "")))))
+
+(defun org-autodoc-get-longest-prefixes ()
+  "Return common prefix in current buffer."
+  (mapcar #'car
+          (seq-sort-by
+           (org-autodoc--compose
+            length
+            car)
+           #'>
+           (delete nil
+                   (org-autodoc-cycle-elisp-doc-detect-prefixes)))))
+
+
+
+;;;###autoload
+(defun org-autodoc-insert-doc-string ()
+  "Insert documentation template for current definition."
+  (interactive)
+  (let* ((item
+          (when-let ((l (org-autodoc--elisp-parse-list-at-point)))
+            (when (assoc (plist-get l :type) org-autodoc-docstring-positions)
+              l)))
+         (bounds (if item (bounds-of-thing-at-point 'sexp)
+                   (org-autodoc-elisp-bounds-of-def-sexp
+                    (mapcar #'car
+                            org-autodoc-docstring-positions)))))
+    (unless item
+      (when bounds
+        (save-excursion
+          (goto-char (car bounds))
+          (setq item (org-autodoc--elisp-parse-list-at-point)))))
+    (when (and item
+               (not (plist-get item :doc)))
+      (let ((name (plist-get item :name))
+            (args (plist-get item :args))
+            (prefix)
+            (doc))
+        (setq prefix
+              (or (when name
+                    (seq-find
+                     (org-autodoc--rpartial string-prefix-p name)
+                     (org-autodoc-get-longest-prefixes)))
+                  ""))
+        (setq org-autodoc-current-doc-prefix prefix)
+        (setq doc (org-autodoc-cycle-generate-function-docs
+                   org-autodoc-current-doc-prefix
+                   name
+                   args
+                   org-autodoc-current-doc-suffix))
+        (goto-char (car bounds))
+        (down-list 1)
+        (forward-sexp (cdr (assoc (plist-get item :type)
+                                  org-autodoc-docstring-positions)))
+        (newline-and-indent)
+        (insert (prin1-to-string doc))
+        (forward-sexp -1)
+        (forward-char 1)))))
 
 (provide 'org-autodoc)
 ;;; org-autodoc.el ends here
