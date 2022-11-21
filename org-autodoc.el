@@ -639,18 +639,16 @@ See function `org-autodoc-parse-list-at-point'."
               (setq pl (plist-put pl keyword (list sexp)))))))
       pl)))
 
-(defun org-autodoc-elisp-generate-use-package-string (reponame
-                                                      &optional
-                                                      user
-                                                      commands
-                                                      maps)
+(defun org-autodoc-elisp-generate-use-package-string (reponame &optional user
+                                                               commands maps)
   "Generate string straght and use package installation from USER and REPONAME.
 With COMMANDS also insert :commands.
 With MAPS also insert :bind."
   (org-autodoc-with-temp-lisp-buffer
+      (indent-tabs-mode -1)
       (insert
        "(use-package " reponame ")")
-      (forward-char -1)
+    (forward-char -1)
     (when (and user reponame)
       (newline-and-indent)
       (insert ":straight (" reponame ")")
