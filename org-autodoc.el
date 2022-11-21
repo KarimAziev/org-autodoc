@@ -818,7 +818,7 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
                          "*** Manual"
                          "Download the source code and put it wherever you like and add the directory to the load path:"
                          "#+begin_src elisp :eval no"
-                         ,(format "(add-to-list 'load-path \"/path/to/%s)"
+                         ,(format "(add-to-list 'load-path \"/path/to/%s\")"
                                   name)
                          ,(format "(require '%s)" name)
                          "#+end_src"
