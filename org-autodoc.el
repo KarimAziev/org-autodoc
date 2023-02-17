@@ -645,10 +645,12 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
 (defun org-autodoc-scan-get-buffer-maps ()
   "Return keymaps in current buffer."
   (when-let ((maps (plist-get (org-autodoc-scan-buffer) :keymap)))
-    (mapcar (lambda (it)
-              (let ((sym (intern (car it))))
-                (cons sym (symbol-value sym))))
-            maps)))
+    (delq nil (mapcar (lambda (it)
+                        (when-let* ((sym (intern (car it)))
+                                    (val (symbol-value sym)))
+                          (when (> (length val) 0)
+                            (cons sym val))))
+                      maps))))
 
 (defun org-autodoc-scan-buffer ()
   "Return plist of top level Lisp definitions.
