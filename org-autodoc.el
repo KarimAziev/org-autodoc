@@ -529,6 +529,7 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
       name
       '(subr-x cl-lib comint cl-generic cl-print jsonrpc map nadvice ol seq
                let-alist
+               emacs
                finder-inf hierarchy))
      (assq
       name
