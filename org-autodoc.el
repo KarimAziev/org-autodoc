@@ -394,19 +394,21 @@ SYMB can be either symbol, either string."
   (when-let* ((value (nth 2 sexp))
               (vals (and (listp value)
                          (symbolp (car value))
-                         (memq (car value) '(let let*))
+                         (memq (car value)
+                               '(let let*))
                          (car (seq-drop value 1)))))
     (when (and (listp vals)
                (listp (car vals)))
       (seq-find (lambda (it)
-                (when-let ((val (and (listp (cdr it))
-                                     (listp (cadr it))
-                                     (cadr it))))
-                  (and
-                   (= 1 (length val))
-                   (symbolp (car val))
-                   (memq (car val) '(make-sparse-keymap)))))
-              vals))))
+                  (when-let ((val (and (listp (cdr it))
+                                       (listp (cadr it))
+                                       (cadr it))))
+                    (and
+                     (= 1 (length val))
+                     (symbolp (car val))
+                     (memq (car val) '(make-sparse-keymap
+                                       make-keymap)))))
+                vals))))
 
 (defun org-autodoc-backward-list (&optional n)
   "Move backward across N balanced group of parentheses.
