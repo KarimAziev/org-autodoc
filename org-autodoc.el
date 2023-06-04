@@ -351,7 +351,7 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
 ITEM-LIST is a list of (NAME ARGS DOC-STRING DEFINITION-TYPE).
 For example:
 \(\"my-function\" (my-arg) \"Doc string.\" defun)"
-	(let ((name (format "+ ~%s~" (car item-list)))
+	(let ((name (format "**** ~%s~" (car item-list)))
         (args
 				 (when (nth 1 item-list)
            (format " %s" (nth 1 item-list))))
@@ -833,20 +833,19 @@ results of calling FN with list of (symbol-name args doc deftype)."
 								 ""))))))))
 
 ;;;###autoload
-(defun org-autodoc-insert-use-package (&optional library)
-  "Insert `use-package' skeleton for LIBRARY."
-  (interactive)
+(defun org-autodoc-insert-use-package (library)
+	"Insert `use-package' skeleton for LIBRARY."
+	(interactive (list (read-library-name)))
   (require 'find-func)
   (let ((orig-buffer (current-buffer)))
-    (when-let* ((lib (or library (read-library-name)))
-                (file (find-library-name lib))
-                (str (with-current-buffer (find-file-noselect file)
-                       (require (intern lib))
-                       (org-autodoc-elisp-generate-use-package-string
-                        lib nil
-                        (mapcar #'car (plist-get (org-autodoc-scan-buffer)
-                                                 :interactive))
-                        (org-autodoc-scan-get-buffer-maps)))))
+    (when-let ((file (find-library-name library))
+               (str (with-current-buffer (find-file-noselect file)
+                      (require (intern library))
+                      (org-autodoc-elisp-generate-use-package-string
+                       library nil
+                       (mapcar #'car (plist-get (org-autodoc-scan-buffer)
+                                                :interactive))
+                       (org-autodoc-scan-get-buffer-maps)))))
       (with-current-buffer orig-buffer
         (insert str)))))
 
@@ -873,8 +872,7 @@ results of calling FN with list of (symbol-name args doc deftype)."
 
 ;;;###autoload
 (defun org-autodoc-org-annotation ()
-	"Return string with readme template in org mode format.
-If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
+	"Return string with readme template in org mode format."
 	(when-let* ((remote (cdar (org-autodoc-git-remotes-alist)))
               (parts (reverse
                       (seq-take (reverse
@@ -985,7 +983,7 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
 
 ;;;###autoload
 (defun org-autodoc-async ()
-	"Load current file in new `emacs' process and generate documentation."
+	"Load current file in new `emacs' process and generate documentation for it."
 	(interactive)
   (let* ((command
           (org-autodoc-get-emacs-batch-cmd
@@ -1372,8 +1370,8 @@ If SYMBOLS is nil use `km-elisp-function-symbols'"
 
 ;;;###autoload
 (defun org-autodoc-insert-doc-string ()
-  "Insert documentation template for current definition."
-  (interactive)
+	"Inside function without documentation string, insert documentation template."
+	(interactive)
   (let* ((item
           (when-let ((l (org-autodoc--elisp-parse-list-at-point)))
             (when (assoc (plist-get l :type) org-autodoc-docstring-positions)
@@ -1394,11 +1392,12 @@ If SYMBOLS is nil use `km-elisp-function-symbols'"
             (prefix)
             (doc))
         (setq prefix
-              (or (when name
-                    (seq-find
-                     (org-autodoc--rpartial string-prefix-p name)
-                     (org-autodoc-get-longest-prefixes)))
-                  ""))
+              (or
+							 (when name
+                 (seq-find
+                  (org-autodoc--rpartial string-prefix-p name)
+                  (org-autodoc-get-longest-prefixes)))
+               ""))
         (setq org-autodoc-current-doc-prefix prefix)
         (setq doc (org-autodoc-cycle-generate-function-docs
                    org-autodoc-current-doc-prefix

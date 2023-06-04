@@ -1,57 +1,61 @@
-* org-autodoc
+#+OPTIONS: ^:nil
 
-Generate overview and use-package skeletons for elisp packages.
+* About
 
-** Requirements
+Generate documentation for Elisp packages.
 
-+ Emacs >= 28.1
-+ comint
-+ shell
-+ find-func
-+ org
+* Table of Contents                                       :TOC_2_gh:QUOTE:noexport:
+#+BEGIN_QUOTE
+- [[#about][About]]
+- [[#installation][Installation]]
+  - [[#with-use-package-and-straight][With ~use-package~ and ~straight~]]
+  - [[#manual-installation][Manual installation]]
+- [[#usage][Usage]]
+  - [[#commands][Commands]]
+#+END_QUOTE
 
-** Installation
+* Installation
 
-*** Manually
+| Name  | Version |
+|-------+---------|
+| Emacs |    28.1 |
+| ~org~ |   9.5.5 |
 
-Download repository and it to your load path in your init file:
 
+** With ~use-package~ and ~straight~
 #+begin_src elisp :eval no
-
-(add-to-list 'load-path "/path/to/org-autodoc/")
-
-(require 'org-autodoc)
-
-#+end_src
-
-*** With use-package and straight
-
-#+begin_src elisp :eval no
-
 (use-package org-autodoc
-	:straight (org-autodoc
-			       :repo "KarimAziev/org-autodoc"
-			       :type git
-			       :host github)
-	:commands (org-autodoc-async
-			       org-autodoc-insert-use-package
-             org-autodoc-insert-doc-string))
-
-
-
+  :straight (org-autodoc
+             :repo "KarimAziev/org-autodoc"
+             :type git
+             :host github)
+  :commands (org-autodoc-insert-doc-string
+             org-autodoc-async
+             org-autodoc-insert-use-package))
 #+end_src
+
+** Manual installation
+
+Download the source code and put it wherever you like, e.g. into =~/.emacs.d/org-autodoc/=
+
+#+begin_src shell :eval no
+git clone https://github.com/KarimAziev/org-autodoc.git ~/.emacs.d/org-autodoc/
+#+end_src
+
+Add the downloaded directory to the load path:
+
+#+begin_src elisp :eval no
+(add-to-list 'load-path "~/.emacs.d/org-autodoc/")
+(require 'org-autodoc)
+#+end_src
+
+* Usage
 
 ** Commands
 
-*** ~org-autodoc-async~
-Load current file in new emacs process and generate documentation in org mode syntax.
-
-[[./org-autodoc-async.gif]]
-
-*** ~org-autodoc-insert-use-package~
-Read a library and interactivelly insert skeleton for ~use-package~.
-Skeleton includes commands and bindings.
-
-[[./org-autodoc-insert-use-package.gif]]
-** ~org-autodoc-insert-doc-string~
-Insert documentation template for current definition.
+**** ~org-autodoc-insert-doc-string~
+Inside function without documentation string, insert documentation template.
+**** ~org-autodoc-async~
+Load current file in new =emacs= process and generate documentation for it.
+**** ~org-autodoc-insert-use-package~  (library)
+Insert =use-package= skeleton for =library=.
