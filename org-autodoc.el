@@ -832,9 +832,9 @@ results of calling FN with list of (symbol-name args doc deftype)."
 
 ;;;###autoload
 (defun org-autodoc-org-annotation ()
-  "Return string with readme template in org mode format.
+	"Return string with readme template in org mode format.
 If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
-  (when-let* ((remote (cdar (org-autodoc-git-remotes-alist)))
+	(when-let* ((remote (cdar (org-autodoc-git-remotes-alist)))
               (parts (reverse
                       (seq-take (reverse
                                  (split-string
