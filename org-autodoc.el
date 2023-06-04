@@ -1307,7 +1307,9 @@ If SYMBOLS is nil use `km-elisp-function-symbols'"
            (delete nil
                    (org-autodoc-cycle-elisp-doc-detect-prefixes)))))
 
-
+(defun org-autodoc-get-shortest-common-prefix ()
+	"Return common prefix in current buffer."
+	(car (last (org-autodoc-get-longest-prefixes))))
 
 ;;;###autoload
 (defun org-autodoc-insert-doc-string ()
