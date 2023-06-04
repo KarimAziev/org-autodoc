@@ -1,4 +1,4 @@
-;;; org-autodoc.el --- Generate overview for elisp packages -*- lexical-binding: t; -*-
+;;; org-autodoc.el --- Generate documentation for Elisp packages -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2022 Karim Aziiev <karim.aziiev@gmail.com>
 
@@ -25,16 +25,17 @@
 
 ;;; Commentary:
 
-;; Generate overview and use-package skeletons for elisp packages.
-
-;;; Commands
+;; Generate org readme for Elisp packages.
 
 ;;; Code:
 
 
 
 (require 'subr-x)
+(require 'lisp-mnt)
+
 (declare-function find-library-name "find-func")
+
 (defvar org-autodoc-load-filename (or load-file-name buffer-file-name))
 
 (defvar org-autodoc-docstring-positions
@@ -90,7 +91,7 @@
     (:defmacro . "Macros")
     (:cl-defmacro . "Macros")
     (:defvar . "Variables")
-    (:defvar-local . "Variables")
+    (:defvar-local . "Local Variables")
     (:cl-defmethod . "Method")
     (:cl-defstruct . "Structs")
     (:defsubst . "Inline Functions")
@@ -223,8 +224,8 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
     lengths))
 
 (defun org-autodoc-render-list-to-org-table (rows &optional head)
-  "Convert list or vector of ROWS to org table wit HEAD."
-  (when (vectorp rows)
+	"Convert list or vector of ROWS to org table wit HEAD."
+	(when (vectorp rows)
     (setq rows (append rows nil)))
   (setq rows (mapcar (lambda (r)
                        (cond ((vectorp r)
@@ -287,9 +288,18 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
                                       columns)
                                      "+")
                                     "|"))))
-    (string-join
-     (list header rows-str)
-     "\n")))
+		(with-temp-buffer
+			(save-excursion
+				(insert (string-join
+								 (list header rows-str)
+								 "\n")))
+			(require 'org)
+			(org-mode)
+			(forward-char 1)
+			(when (fboundp 'org-table-align)
+				(org-table-align))
+			(buffer-substring-no-properties (point-min)
+																			(point-max)))))
 
 (defun org-autodoc-format-keymap-to-org (keymap)
   "Convert KEYMAP to org table."
@@ -337,27 +347,31 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
    "\s"))
 
 (defun org-autodoc-annotate-to-org (item-list)
-  "Format ITEM-LIST to org list item.
+	"Format ITEM-LIST to org list item.
 ITEM-LIST is a list of (NAME ARGS DOC-STRING DEFINITION-TYPE).
 For example:
 \(\"my-function\" (my-arg) \"Doc string.\" defun)"
-  (let ((name (format "*** ~%s~" (car item-list)))
-        (args (when (nth 1 item-list)
-                (format " %s" (nth 1 item-list))))
-        (doc (when (and (nth 2 item-list)
-                        (stringp (nth 2 item-list)))
-               (org-autodoc-doc-to-org (nth 2 item-list))))
+	(let ((name (format "+ ~%s~" (car item-list)))
+        (args
+				 (when (nth 1 item-list)
+           (format " %s" (nth 1 item-list))))
+        (doc
+				 (when (and (nth 2 item-list)
+                    (stringp (nth 2 item-list)))
+           (org-autodoc-doc-to-org (nth 2 item-list))))
         (title)
-        (keymap (when (and (memq (car (last item-list))
-                                 '(keymap)))
-                  (when-let* ((sym (intern (car item-list)))
-                              (val (and (symbolp sym)
-                                        (boundp sym)
-                                        (symbol-value sym))))
-                    (org-autodoc-format-keymap-to-org val)))))
+        (keymap
+				 (when (and (memq (car (last item-list))
+                          '(keymap)))
+           (when-let* ((sym (intern (car item-list)))
+                       (val (and (symbolp sym)
+                                 (boundp sym)
+                                 (symbol-value sym))))
+             (org-autodoc-format-keymap-to-org val)))))
     (setq title (string-join (delete nil (list name args)) "\s"))
-    (string-join (delete nil (list title (when doc (substitute-command-keys
-                                                    doc))
+    (string-join (delete nil (list title
+																	 (when doc (substitute-command-keys
+                                              doc))
                                    keymap))
                  "\n")))
 
@@ -522,8 +536,8 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
     requires))
 
 (defun org-autodoc-package-builtin-p (symb-or-cell)
-  "Return whether SYMB-OR-CELL is bultin library."
-  (let ((name (if (consp symb-or-cell)
+	"Return whether SYMB-OR-CELL is bultin library."
+	(let ((name (if (consp symb-or-cell)
                   (car symb-or-cell)
                 symb-or-cell)))
     (or
@@ -543,21 +557,33 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
   (cadr (assq 'emacs (org-autodoc-get-require-from-package-header))))
 
 (defun org-autodoc-generate-requirenments ()
-  "Return string in `org-mode' format with package dependencies."
-  (let* ((package-requires
+	"Return string in `org-mode' format with package dependencies."
+	(let* ((package-requires
           (seq-remove #'org-autodoc-package-builtin-p
                       (org-autodoc-get-require-from-package-header)))
-         (requires (seq-remove (lambda (it)
-                                 (or
-                                  (org-autodoc-package-builtin-p it)
-                                  (assq (car it) package-requires)))
-                               (org-autodoc-get-require)))
+         (requires (seq-remove
+										(lambda (it)
+                      (or
+                       (org-autodoc-package-builtin-p it)
+                       (assq (car it) package-requires)
+											 (when-let
+													 ((file
+														 (ignore-errors
+															 (find-library-name
+																(symbol-name
+																 (car
+																	it))))))
+												 (not
+													(file-in-directory-p file
+																							 user-emacs-directory)))))
+                    (org-autodoc-get-require)))
          (result))
     (dolist (it package-requires)
       (let ((name (if (listp it)
                       (car it) it))
-            (version (when (listp it)
-                       (cadr it)))
+            (version
+						 (when (listp it)
+               (cadr it)))
             (found)
             (str))
         (setq found (seq-find (lambda (c)
@@ -568,7 +594,7 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
                    (delq nil
                          (list
                           (pcase name
-                            ((pred symbolp)
+														((pred symbolp)
                              (string-join (delete
                                            nil
                                            (list (concat "~" (symbol-name name)
@@ -785,11 +811,26 @@ results of calling FN with list of (symbol-name args doc deftype)."
    sexps "\n"))
 
 (defun org-autodoc-get-require-from-package-header ()
-  "Return list of packages defined in Package-Requires header."
-  (save-excursion
+	"Return list of packages defined in Package-Requires header."
+	(save-excursion
     (goto-char (point-min))
-    (when (re-search-forward "^;;[\s]Package-Requires:\\([^\n]+\\)?" nil t 1)
-      (car (read-from-string (match-string-no-properties 1))))))
+    (when (re-search-forward "^;;[\s]Package-Requires:[\s\t]?+[(]" nil t 1)
+			(forward-char -1)
+			(let ((parse-sexp-ignore-comments nil)
+						(beg (point))
+						(end))
+				(ignore-errors (forward-sexp))
+				(setq end (point))
+				(car (ignore-errors
+							 (read-from-string
+								(mapconcat
+								 (lambda (it)
+									 (replace-regexp-in-string
+										"[;]+[\s\t]?+" "" it))
+								 (split-string (buffer-substring-no-properties
+																beg end)
+															 "[\n\r\f]" t)
+								 ""))))))))
 
 ;;;###autoload
 (defun org-autodoc-insert-use-package (&optional library)
@@ -847,19 +888,20 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
                                 2)))
               (user (pop parts))
               (name (pop parts)))
-    (let ((requirements (org-autodoc-generate-requirenments))
-          (emacs-vers (org-autodoc-emacs-version))
+    (let ((requirements (org-autodoc-get-require-from-package-header))
           (synopsis (progn
                       (require 'lisp-mnt nil t)
-                      (when-let ((descr
-                                  (when (fboundp 'lm-synopsis)
-                                    (lm-synopsis))))
-                        (setq descr (string-trim descr))
-                        (capitalize (if (and
-                                         (> (length descr) 0)
-                                         (not (string-match-p "\\.$" descr)))
-                                        (concat descr ".")
-                                      descr)))))
+                      (when-let* ((descr
+                                   (when (fboundp 'lm-synopsis)
+                                     (or (lm-synopsis)
+																				 (lm-commentary))))
+																	(lines (split-string descr nil t))
+																	(word (capitalize (pop lines))))
+												(concat word " " (replace-regexp-in-string
+																					"\\.$" ""
+																					(string-trim
+																					 (string-join lines " ")))
+																"."))))
           (target (abbreviate-file-name
                    (expand-file-name
                     (concat name "/")
@@ -868,69 +910,83 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
       (setq str (string-join
                  (delq nil
                        (list
-                        (format "* %s" name)
-                        synopsis
-                        "** Installation"
-                        (when emacs-vers
-                          (concat "Emacs >= " emacs-vers " is required."))
-                        "*** Manual"
-                        (when requirements
-                          (concat
-                           "Ensure that you have installed required dependencies:\n"
-                           (mapconcat (apply-partially 'format
-                                                       "- %s")
-                                      requirements
-                                      "\n")))
+												"#+OPTIONS: ^:nil"
+												"* About"
+												synopsis
+												"* Table of Contents                                       :TOC_2_gh:QUOTE:noexport:"
+												"#+BEGIN_QUOTE"
+												"#+END_QUOTE"
+												"* Installation"
+												(when requirements
+													(org-autodoc-render-list-to-org-table
+													 (mapcar
+														(pcase-lambda
+															(`(,sym
+																 ,version))
+															(if (eq sym 'emacs)
+																	(list "Emacs"
+																				(format
+																				 "%s"
+																				 version))
+																(list (concat "~"
+																							(symbol-name
+																							 sym)
+																							"~")
+																			(format "%s"
+																							version))))
+														requirements)
+													 '("Name" "Version")))
+												(org-autodoc-join-strings
+												 "\n"
+												 "** With ~use-package~ and ~straight~"
+												 "#+begin_src elisp :eval no"
+                         (org-autodoc-elisp-generate-use-package-string
+													name user
+													(mapcar #'car
+																	(plist-get
+                                   (org-autodoc-scan-buffer)
+                                   :interactive))
+													(org-autodoc-scan-get-buffer-maps))
+												 "#+end_src")
+                        "** Manual installation"
                         (format
-                         "Download the source code and put it wherever you like, e.g. into =%s="
-                         target)
+												 "Download the source code and put it wherever you like, e.g. into =%s="
+												 target)
                         (org-autodoc-join-strings
-                         "\n"
-                         "#+begin_src shell :eval no"
-                         (org-autodoc-join-strings
+												 "\n"
+												 "#+begin_src shell :eval no"
+												 (org-autodoc-join-strings
                           "\s"
                           "git clone" (or (org-autodoc-ssh-to-https
-                                           remote)
+																					 remote)
                                           remote
                                           "")
                           target)
-                         "#+end_src")
+												 "#+end_src")
                         "Add the downloaded directory to the load path:"
                         (org-autodoc-join-strings
-                         "\n"
-                         "#+begin_src elisp :eval no"
-                         (org-autodoc-join-strings "\n"
-                                                   (format
+												 "\n"
+												 "#+begin_src elisp :eval no"
+												 (org-autodoc-join-strings "\n"
+																									 (format
                                                     "(add-to-list 'load-path %s)"
                                                     (prin1-to-string
-                                                     target))
-                                                   (format "(require '%s)"
-                                                           name))
-                         "#+end_src")
-                        (org-autodoc-join-strings
-                         "*** With use-package and straight"
-                         (string-join
-                          (list "#+begin_src elisp :eval no"
-                                (org-autodoc-elisp-generate-use-package-string
-                                 name user
-                                 (mapcar #'car
-                                         (plist-get
-                                          (org-autodoc-scan-buffer)
-                                          :interactive))
-                                 (org-autodoc-scan-get-buffer-maps))
-                                "#+end_src")
-                          "\n"))
+																										 target))
+																									 (format "(require '%s)"
+																													 name))
+												 "#+end_src")
+												"* Usage"
                         (org-autodoc-annotate-with
-                         "** "
-                         'org-autodoc-annotate-as-org-list)))
+												 "** "
+												 'org-autodoc-annotate-as-org-list)))
                  "\n\n"))
       (set-text-properties 0 (length str) nil str)
       str)))
 
 ;;;###autoload
 (defun org-autodoc-async ()
-  "Load current file in new `emacs' process and generate documentation."
-  (interactive)
+	"Load current file in new `emacs' process and generate documentation."
+	(interactive)
   (let* ((command
           (org-autodoc-get-emacs-batch-cmd
            "(message \"%s\" (org-autodoc-org-annotation))"
@@ -980,7 +1036,7 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
                                                 (insert str)
                                                 (skip-chars-backward
                                                  "\s\t\n\r\f")
-                                              (forward-sexp -1)
+                                              (ignore-errors (forward-sexp -1))
                                               (indent-sexp)
                                               (buffer-substring-no-properties
                                                (point-min)
@@ -990,6 +1046,9 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
                                                       (lambda () rep)))))
                        (require 'org)
                        (org-mode)
+											 (require 'toc-org nil t)
+											 (when (fboundp 'toc-org-insert-toc)
+												 (toc-org-insert-toc))
                        (pop-to-buffer (current-buffer)))))
                (pop-to-buffer (process-buffer process))))))))))
 
@@ -1357,3 +1416,6 @@ If SYMBOLS is nil use `km-elisp-function-symbols'"
 
 (provide 'org-autodoc)
 ;;; org-autodoc.el ends here
+;; Local Variables:
+;; after-save-hook: (lambda nil (setq org-autodoc-load-filename (buffer-file-name)) (eval-buffer))
+;; End:
