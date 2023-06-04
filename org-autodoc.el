@@ -876,7 +876,7 @@ If OUTPUT-FILE is non nil, write template to OUTPUT-FILE."
                         "*** Manual"
                         (when requirements
                           (concat
-                           "Ensure that you have installed required dependencies: \n"
+                           "Ensure that you have installed required dependencies:\n"
                            (mapconcat (apply-partially 'format
                                                        "- %s")
                                       requirements
