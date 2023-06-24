@@ -908,13 +908,13 @@ results of calling FN with list of (symbol-name args doc deftype)."
       (setq str (string-join
                  (delq nil
                        (list
-                        "#+OPTIONS: ^:nil"
+                        "#+OPTIONS: ^:nil tags:nil"
                         "* About"
                         synopsis
-                        "* Table of Contents                                       :TOC_2_gh:QUOTE:noexport:"
+                        "* Table of Contents                                       :TOC_2_gh:QUOTE:"
                         "#+BEGIN_QUOTE"
                         "#+END_QUOTE"
-                        "* Installation"
+                        "* Requirements"
                         (when requirements
                           (org-autodoc-render-list-to-org-table
                            (mapcar
@@ -934,9 +934,10 @@ results of calling FN with list of (symbol-name args doc deftype)."
                                               version))))
                             requirements)
                            '("Name" "Version")))
+                        "* Installation"
                         (org-autodoc-join-strings
                          "\n"
-                         "** With ~use-package~ and ~straight~"
+                         "** With use-package and straight.el"
                          "#+begin_src elisp :eval no"
                          (org-autodoc-elisp-generate-use-package-string
                           name user
