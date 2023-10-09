@@ -224,7 +224,13 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
     lengths))
 
 (defun org-autodoc-render-list-to-org-table (rows &optional head)
-  "Convert list or vector of ROWS to org table wit HEAD."
+  "Convert a list of ROWS into a formatted `org-mode' table.
+
+Argument ROWS is a list or vector of ROWS, where each row is a list or vector of
+cells.
+
+Optional argument HEAD is a list or vector of column headers.
+If not provided, the column headers default to the column indices."
   (when (vectorp rows)
     (setq rows (append rows nil)))
   (setq rows (mapcar (lambda (r)
@@ -641,7 +647,9 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
                                                 (key (string-join
                                                       (reverse parts) "\s")))
                                            (when (and
-                                                  (key-valid-p key)
+                                                  (if (fboundp 'key-valid-p)
+                                                      (key-valid-p key)
+                                                    t)
                                                   (if (string-match-p "^<" key)
                                                       (string-match-p
                                                        "<remap> "
@@ -908,7 +916,7 @@ results of calling FN with list of (symbol-name args doc deftype)."
       (setq str (string-join
                  (delq nil
                        (list
-                        "#+OPTIONS: ^:nil tags:nil"
+                        "#+OPTIONS: ^:nil tags:nil num:nil"
                         "* About"
                         synopsis
                         "* Table of Contents                                       :TOC_2_gh:QUOTE:"
