@@ -1300,8 +1300,11 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
        :interactive interactivep))))
 
 (defun org-autodoc-elisp-bounds-of-def-sexp (&optional symbols)
-  "Return bounds of first parent sexp which head is a member of SYMBOLS.
-If SYMBOLS is nil use `km-elisp-function-symbols'"
+  "Determine the start and end points of a specified sexp in a list.
+
+Optional argument SYMBOLS is a list of symbols to narrow down the search. If
+SYMBOLS is not a list, it is converted into a list. If symbols is not provided,
+`org-autodoc-symbols-to-narrow` is used."
   (org-autodoc--up-list-until-nil
    (when-let ((sexp (sexp-at-point)))
      (when-let ((start (and (listp sexp)
@@ -1316,12 +1319,24 @@ If SYMBOLS is nil use `km-elisp-function-symbols'"
        (cons start (point))))))
 
 (defun org-autodoc-cycle-elisp-doc-detect-prefixes ()
-  "Return longest prefix for functions in current buffer."
+  "Group function names by prefixes using `org-autodoc-cycle-elisp"
   (org-autodoc-group-by-prefixes (org-autodoc-elisp-get-defun-names)))
 
 (defun org-autodoc-cycle-generate-function-docs (prefix function-name arguments
                                                         &optional ending)
-  "Generate a verb based on FUNCTION-NAME with trimmed PREFIX and ARGUMENTS."
+  "Generate and format documentation for a given function in org-autodoc-cycle.
+
+Argument PREFIX is a string that will be removed from the beginning of
+FUNCTION-NAME and used to generate the first sentence of the documentation.
+
+Argument FUNCTION-NAME is the name of the function for which the documentation
+is being generated.
+
+Argument ARGUMENTS is a list of the function's arguments or a string
+representation of the same.
+
+Optional argument ENDING is a string that will be appended to the end of the
+first sentence of the documentation."
   (let ((replacements '(("&optional" . "Optional argument %s is\s.")
                         ("&rest" . "")
                         ("&key" . "")
@@ -1368,7 +1383,7 @@ If SYMBOLS is nil use `km-elisp-function-symbols'"
     (string-trim-right (concat verb "." "\n" (or formatted-args "")))))
 
 (defun org-autodoc-get-longest-prefixes ()
-  "Return common prefix in current buffer."
+  "Sort and return the longest prefixes from Elisp documentation."
   (mapcar #'car
           (seq-sort-by
            (org-autodoc--compose
@@ -1379,12 +1394,12 @@ If SYMBOLS is nil use `km-elisp-function-symbols'"
                    (org-autodoc-cycle-elisp-doc-detect-prefixes)))))
 
 (defun org-autodoc-get-shortest-common-prefix ()
-  "Return common prefix in current buffer."
+  "Retrieve the shortest common prefix from the longest prefixes list."
   (car (last (org-autodoc-get-longest-prefixes))))
 
 ;;;###autoload
 (defun org-autodoc-insert-doc-string ()
-  "Inside function without documentation string, insert documentation template."
+  "Insert a docstring for the function at point using `org-autodoc`."
   (interactive)
   (let* ((item
           (when-let ((l (org-autodoc--elisp-parse-list-at-point)))
