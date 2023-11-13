@@ -624,10 +624,15 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
             (seq-filter 'cdr requires)))))
 
 (defun org-autodoc-format-keymap-to-alist (keymap)
-  "Convert KEYMAP to alist."
+  "Convert a KEYMAP to an alist for documentation in Org mode.
+
+Argument KEYMAP is the keymap to be formatted into an alist."
   (when (keymapp keymap)
     (with-temp-buffer
-      (describe-map-tree keymap t nil nil nil t t t)
+      (with-no-warnings
+        (if (fboundp 'help--describe-map-tree)
+            (help--describe-map-tree keymap t nil nil nil t t t)
+          (describe-map-tree keymap t nil nil nil t t t)))
       (while (re-search-backward "[\n][\n]+" nil t 1)
         (replace-match "\n"))
       (let* ((items (seq-remove
