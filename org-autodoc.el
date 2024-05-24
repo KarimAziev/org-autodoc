@@ -829,7 +829,8 @@ results of calling FN with list of (symbol-name args doc deftype)."
   "Return list of packages defined in Package-Requires header."
   (save-excursion
     (goto-char (point-min))
-    (when (re-search-forward "^;;[\s]Package-Requires:[\s\t]?+[(]" nil t 1)
+    (when (re-search-forward "^;;[ \t]*Package-Requires:[ \t]*[(]"
+                             nil t 1)
       (forward-char -1)
       (let ((parse-sexp-ignore-comments nil)
             (beg (point))
@@ -840,8 +841,8 @@ results of calling FN with list of (symbol-name args doc deftype)."
                (read-from-string
                 (mapconcat
                  (lambda (it)
-                   (replace-regexp-in-string
-                    "[;]+[\s\t]?+" "" it))
+                   (replace-regexp-in-string "[;]+[ \t]*"
+                                             "" it))
                  (split-string (buffer-substring-no-properties
                                 beg end)
                                "[\n\r\f]" t)
