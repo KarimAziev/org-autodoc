@@ -442,8 +442,7 @@ Return new position if changed, nil otherwise."
       end)))
 
 (defun org-autodoc-get-provide ()
-  "Parse list at point and return alist of form (symbol-name args doc deftype).
-E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
+  "Return the symbol provided by the `provide' form in the current buffer."
   (save-excursion
     (goto-char (point-max))
     (let ((found))
@@ -459,17 +458,19 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
       found)))
 
 (defun org-autodoc-parse-list-at-point ()
-  "Parse list at point and return alist of form (symbol-name args doc deftype).
-E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
-  (when-let* ((sexp (unless (nth 4 (syntax-ppss (point)))
-                      (list-at-point)))
+  "Parse the list at point and return its name, arguments, docstring, and type."
+  (when-let* ((sexp
+               (unless (nth 4 (syntax-ppss (point)))
+                 (list-at-point)))
               (type (car sexp))
-              (id (org-autodoc-unquote (when (symbolp (nth 1 sexp))
-                                         (nth 1 sexp))))
+              (id (org-autodoc-unquote
+                   (when (symbolp (nth 1 sexp))
+                     (nth 1 sexp))))
               (name (symbol-name id)))
-    (let ((doc (when-let ((pos (cdr (assq type
-                                          org-autodoc-docstring-positions))))
-                 (nth pos sexp)))
+    (let ((doc
+           (when-let ((pos (cdr (assq type
+                                      org-autodoc-docstring-positions))))
+             (nth pos sexp)))
           (args (and (org-autodoc-function-p type)
                      (nth 2 sexp))))
       (list name args doc
@@ -520,14 +521,15 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
       (org-autodoc-format-sexp-to-require sexp))))
 
 (defun org-autodoc-get-require ()
-  "Return string in `org-mode' format with package dependencies."
+  "Return a list of required dependencies found in the current buffer."
   (let ((requires '())
         (deps))
     (save-excursion
       (goto-char (point-max))
       (while (org-autodoc-backward-list)
-        (when-let ((sexp (unless (nth 4 (syntax-ppss (point)))
-                           (list-at-point))))
+        (when-let ((sexp
+                    (unless (nth 4 (syntax-ppss (point)))
+                      (list-at-point))))
           (if-let ((dep (org-autodoc-format-sexp-to-require sexp)))
               (push dep requires)
             (when (listp sexp)
@@ -1255,8 +1257,7 @@ character in s is index 1."
       (count-matches re (or start 1) (or end (point-max))))))
 
 (defun org-autodoc--elisp-parse-list-at-point ()
-  "Parse list at point and return alist of form (symbol-name args doc deftype).
-E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
+  "Parse and return details of the Lisp list at the current point."
   (when-let* ((sexp (unless (nth 4 (syntax-ppss (point)))
                       (when-let ((s (sexp-at-point)))
                         (when (listp s)
@@ -1319,7 +1320,7 @@ SYMBOLS is not a list, it is converted into a list. If symbols is not provided,
        (cons start (point))))))
 
 (defun org-autodoc-cycle-elisp-doc-detect-prefixes ()
-  "Group function names by prefixes using `org-autodoc-cycle-elisp"
+  "Group function names by prefixes using `org-autodoc-cycle-elisp'."
   (org-autodoc-group-by-prefixes (org-autodoc-elisp-get-defun-names)))
 
 (defun org-autodoc-cycle-generate-function-docs (prefix function-name arguments
