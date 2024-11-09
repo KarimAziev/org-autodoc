@@ -181,7 +181,7 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
               (re-search-forward
                "[,]?#\\+\\(begin\\|end\\)_\\([a-z]+\\)\\($\\|[\s\f\t\n\r\v]\\)"
                nil t 1)
-            (when-let ((word (match-string-no-properties 1))
+            (when-let* ((word (match-string-no-properties 1))
                        (prefix (if (string= ","
                                             (substring-no-properties
                                              (match-string-no-properties 0)
@@ -214,7 +214,7 @@ Beginning and end is bounds of inner content. For example: (example 4292 4486)."
              (nth idx
                   (car
                    (seq-sort-by (lambda (it)
-                                  (if-let ((col (nth idx it)))
+                                  (if-let* ((col (nth idx it)))
                                       (length (format "%s" col))
                                     0))
                                 #'> items)))))
@@ -406,7 +406,7 @@ SYMB can be either symbol, either string."
 
 (defun org-autodoc-symbol-keymapp (sym)
   "Return t if value of symbol SYM is a keymap."
-  (when-let ((val (when (boundp sym) (symbol-value sym))))
+  (when-let* ((val (when (boundp sym) (symbol-value sym))))
     (keymapp val)))
 
 (defun org-autodoc-symbol-sexp-keymapp (sexp)
@@ -420,7 +420,7 @@ SYMB can be either symbol, either string."
     (when (and (listp vals)
                (listp (car vals)))
       (seq-find (lambda (it)
-                  (when-let ((val (and (listp (cdr it))
+                  (when-let* ((val (and (listp (cdr it))
                                        (listp (cadr it))
                                        (cadr it))))
                     (and
@@ -468,7 +468,7 @@ Return new position if changed, nil otherwise."
                      (nth 1 sexp))))
               (name (symbol-name id)))
     (let ((doc
-           (when-let ((pos (cdr (assq type
+           (when-let* ((pos (cdr (assq type
                                       org-autodoc-docstring-positions))))
              (nth pos sexp)))
           (args (and (org-autodoc-function-p type)
@@ -514,7 +514,7 @@ If package is optional, also add suffix (optional)."
 (defun org-autodoc-parse-require ()
   "Parse list at point and return alist of form (symbol-name args doc deftype).
 E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
-  (when-let ((sexp (unless (or (nth 4 (syntax-ppss (point)))
+  (when-let* ((sexp (unless (or (nth 4 (syntax-ppss (point)))
                                (nth 3 (syntax-ppss (point))))
                      (sexp-at-point))))
     (when (listp sexp)
@@ -527,10 +527,10 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
     (save-excursion
       (goto-char (point-max))
       (while (org-autodoc-backward-list)
-        (when-let ((sexp
+        (when-let* ((sexp
                     (unless (nth 4 (syntax-ppss (point)))
                       (list-at-point))))
-          (if-let ((dep (org-autodoc-format-sexp-to-require sexp)))
+          (if-let* ((dep (org-autodoc-format-sexp-to-require sexp)))
               (push dep requires)
             (when (listp sexp)
               (push sexp deps))))))
@@ -538,7 +538,7 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
       (org-autodoc-with-temp-lisp-buffer
           (insert (prin1-to-string deps))
           (while (re-search-backward "[(]require[\s\t\n\r\f]+'" nil t 1)
-            (when-let ((found (org-autodoc-parse-require)))
+            (when-let* ((found (org-autodoc-parse-require)))
               (unless (member found requires)
                 (push found requires))))))
     requires))
@@ -574,7 +574,7 @@ E.g. (\"org-autodoc-parse-list-at-point\" (arg) \"Doc string\" defun)"
                       (or
                        (org-autodoc-package-builtin-p it)
                        (assq (car it) package-requires)
-                       (when-let
+                       (when-let*
                            ((file
                              (ignore-errors
                                (find-library-name
@@ -675,7 +675,7 @@ Argument KEYMAP is the keymap to be formatted into an alist."
 
 (defun org-autodoc-git-remotes-alist ()
   "Return alist of remotes and associated urls (REMOTE-NAME . REMOTE-URL)."
-  (when-let ((remotes
+  (when-let* ((remotes
               (with-temp-buffer
                 (when (= 0 (apply #'call-process "git" nil t nil
                                   '("remote" "-v")))
@@ -688,7 +688,7 @@ Argument KEYMAP is the keymap to be formatted into an alist."
 
 (defun org-autodoc-scan-get-buffer-maps ()
   "Return keymaps in current buffer."
-  (when-let ((maps (plist-get (org-autodoc-scan-buffer) :keymap)))
+  (when-let* ((maps (plist-get (org-autodoc-scan-buffer) :keymap)))
     (delq nil (mapcar (lambda (it)
                         (when-let* ((sym (intern (car it)))
                                     (val (symbol-value sym)))
@@ -709,10 +709,10 @@ See function `org-autodoc-parse-list-at-point'."
     (let ((pl '()))
       (goto-char (point-max))
       (while (org-autodoc-backward-list)
-        (when-let ((sexp (org-autodoc-parse-list-at-point)))
+        (when-let* ((sexp (org-autodoc-parse-list-at-point)))
           (let ((keyword (intern (concat ":" (symbol-name (car
                                                            (reverse sexp)))))))
-            (if-let ((group (plist-get pl keyword)))
+            (if-let* ((group (plist-get pl keyword)))
                 (setq pl (plist-put pl keyword (append group (list sexp))))
               (setq pl (plist-put pl keyword (list sexp)))))))
       pl)))
@@ -737,6 +737,8 @@ With MAPS also insert :bind."
       (insert ":type git")
       (newline-and-indent)
       (insert ":host github")
+      (newline-and-indent)
+      (insert ":flavor nil")
       (forward-char 1))
     (let ((key-commands))
       (when maps
@@ -777,17 +779,18 @@ With MAPS also insert :bind."
             (insert cell)))
         (forward-char 1))
       (forward-sexp -1)
-      (buffer-substring-no-properties (point-min) (point-max)))))
+      (buffer-substring-no-properties (point-min)
+                                      (point-max)))))
 
 (defun org-autodoc-annotate-with (prefix fn)
   "Return string of grouped annotations.
 
 Each group is prefixed with PREFIX, and constists of
 results of calling FN with list of (symbol-name args doc deftype)."
-  (when-let ((items (org-autodoc-scan-buffer)))
+  (when-let* ((items (org-autodoc-scan-buffer)))
     (let ((blocks))
       (dolist (key (mapcar #'car org-autodoc-group-annotation-alist))
-        (when-let ((title (alist-get key org-autodoc-group-annotation-alist))
+        (when-let* ((title (alist-get key org-autodoc-group-annotation-alist))
                    (description (plist-get items key)))
           (setq description
                 (concat prefix
@@ -802,9 +805,10 @@ results of calling FN with list of (symbol-name args doc deftype)."
 (defun org-autodoc-get-emacs-batch-cmd (&optional fn file)
   "Return string for running `emacs' evaluating FN in FILE."
   (let ((fn (or fn "buffer-file-name")))
-    (string-join `("emacs --batch " ,@(mapcan (lambda (path) (list "-L" path))
-                                              (append (list "./")
-                                                      load-path))
+    (string-join `("emacs --batch " ,@(mapcan (lambda (path)
+                                                (list "-L" path))
+                                       (append (list "./")
+                                        load-path))
                    ,(concat " --file " (or file buffer-file-name))
                    "-l "
                    ,org-autodoc-load-filename
@@ -854,7 +858,7 @@ results of calling FN with list of (symbol-name args doc deftype)."
   (interactive (list (read-library-name)))
   (require 'find-func)
   (let ((orig-buffer (current-buffer)))
-    (when-let ((file (find-library-name library))
+    (when-let* ((file (find-library-name library))
                (str (with-current-buffer (find-file-noselect file)
                       (require (intern library))
                       (org-autodoc-elisp-generate-use-package-string
@@ -1026,7 +1030,7 @@ results of calling FN with list of (symbol-name args doc deftype)."
                            (buffer-string))))
              (if (= (process-exit-status process) 0)
                  (progn
-                   (when-let ((buff (process-buffer process)))
+                   (when-let* ((buff (process-buffer process)))
                      (when (and (bufferp buff)
                                 (buffer-live-p buff))
                        (kill-buffer buff)))
@@ -1128,13 +1132,13 @@ The optional argument COUNT is a number that indicates the
   "Move by calling FN N times.
 Return new position if changed, nil otherwise."
   (unless n (setq n 1))
-  (when-let ((str-start (nth 8 (syntax-ppss (point)))))
+  (when-let* ((str-start (nth 8 (syntax-ppss (point)))))
     (goto-char str-start))
   (let ((init-pos (point))
         (pos)
         (count n))
     (while (and (not (= count 0))
-                (when-let ((end (ignore-errors
+                (when-let* ((end (ignore-errors
                                   (funcall fn)
                                   (point))))
                   (unless (= end (or pos init-pos))
@@ -1200,7 +1204,7 @@ Arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-forward'."
   (let ((s1-names (split-string s1 "[-]"))
         (s2-names (split-string s2 "[-]"))
         (result))
-    (while (when-let ((res1 (pop s1-names))
+    (while (when-let* ((res1 (pop s1-names))
                       (res2 (pop s2-names)))
              (when (string= res1 res2)
                (setq result (push res1 result)))))
@@ -1260,7 +1264,7 @@ character in s is index 1."
 (defun org-autodoc--elisp-parse-list-at-point ()
   "Parse and return details of the Lisp list at the current point."
   (when-let* ((sexp (unless (nth 4 (syntax-ppss (point)))
-                      (when-let ((s (sexp-at-point)))
+                      (when-let* ((s (sexp-at-point)))
                         (when (listp s)
                           s))))
               (type (car sexp))
@@ -1269,7 +1273,7 @@ character in s is index 1."
                      (nth 1 sexp))))
               (name (symbol-name id)))
     (let ((doc
-           (when-let ((pos (cdr (assq type org-autodoc-docstring-positions))))
+           (when-let* ((pos (cdr (assq type org-autodoc-docstring-positions))))
              (when (and (nth pos sexp)
                         (stringp (nth pos sexp)))
                (nth pos sexp))))
@@ -1308,8 +1312,8 @@ Optional argument SYMBOLS is a list of symbols to narrow down the search. If
 SYMBOLS is not a list, it is converted into a list. If symbols is not provided,
 `org-autodoc-symbols-to-narrow` is used."
   (org-autodoc--up-list-until-nil
-   (when-let ((sexp (sexp-at-point)))
-     (when-let ((start (and (listp sexp)
+   (when-let* ((sexp (sexp-at-point)))
+     (when-let* ((start (and (listp sexp)
                             (nth 1 sexp)
                             (memq (car sexp)
                                   (or (if (listp symbols)
@@ -1374,7 +1378,7 @@ first sentence of the documentation."
         (setq result
               (if (null rep)
                   (format "%s is ." (upcase curr))
-                (if-let ((count (org-autodoc-count-matches-by-re "%s" rep)))
+                (if-let* ((count (org-autodoc-count-matches-by-re "%s" rep)))
                     (let ((next-args (mapcar #'upcase (seq-take args count))))
                       (setq args (seq-drop args count))
                       (apply #'format (append (list rep) next-args)))
@@ -1404,7 +1408,7 @@ first sentence of the documentation."
   "Insert a docstring for the function at point using `org-autodoc`."
   (interactive)
   (let* ((item
-          (when-let ((l (org-autodoc--elisp-parse-list-at-point)))
+          (when-let* ((l (org-autodoc--elisp-parse-list-at-point)))
             (when (assoc (plist-get l :type) org-autodoc-docstring-positions)
               l)))
          (bounds (if item (bounds-of-thing-at-point 'sexp)
